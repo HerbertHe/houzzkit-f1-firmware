@@ -89,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          base="houzzkit-firmware-ubuntu-$(date +%Y_%m_%d)"
+          base="houzzkit-firmware-ubuntu_24_04-$(date +%Y_%m_%d)"
           release_options=(--latest)
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
             release_options=(--prerelease --latest=false)
@@ -97,9 +97,9 @@ jobs:
 
           # The create-ref API reserves a unique name even when builds finish together.
           # Both stable releases and PR prereleases use the same daily sequence.
-          for ((number = 1; ; number++)); do
+          for ((number = 0; ; number++)); do
             tag="$base"
-            if ((number > 1)); then
+            if ((number > 0)); then
               tag="${base}_${number}"
             fi
             if response=$(gh api "repos/$GH_REPO/git/refs" \

@@ -1,0 +1,11 @@
+[Unit]
+Description=Houzzkit first-boot HTTP redirect (management port)
+After=systemd-sysusers.service
+
+[Socket]
+ListenStream=[::]:80
+BindIPv6Only=both
+BindToDevice=eno1
+
+[Install]
+WantedBy=sockets.target

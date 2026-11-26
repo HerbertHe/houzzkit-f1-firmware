@@ -20,16 +20,52 @@ func isDeviceHostname(host string) bool {
 	return strings.EqualFold(strings.TrimSuffix(host, "."), deviceHostname)
 }
 
-func validHost(r *http.Request) bool {
+func requestHost(r *http.Request, authority string) string {
 	local, ok := r.Context().Value(http.LocalAddrContextKey).(*net.TCPAddr)
 	if !ok {
-		return false
+		return ""
 	}
-	host, port, err := net.SplitHostPort(r.Host)
-	if err != nil || port != strconv.Itoa(local.Port) {
-		return false
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil {
+		host = authority
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
+			if !strings.Contains(host, ":") {
+				return ""
+			}
+		} else if strings.Contains(host, ":") {
+			return ""
+		}
+	} else if port != strconv.Itoa(local.Port) {
+		return ""
 	}
-	return isDeviceHostname(host) || local.IP.Equal(net.ParseIP(host))
+	if isDeviceHostname(host) {
+		return strings.ToLower(host)
+	}
+	if ip := net.ParseIP(host); ip != nil && local.IP.Equal(ip) {
+		if strings.Contains(host, ":") {
+			return "[" + strings.ToLower(host) + "]"
+		}
+		return ip.String()
+	}
+	return ""
+}
+
+func redirectHTTPS(w http.ResponseWriter, r *http.Request) {
+	host := requestHost(r, r.Host)
+	if host == "" {
+		http.Error(w, "invalid host", http.StatusBadRequest)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !isDeviceHostname(host) {
+		host += ":443"
+	}
+	http.Redirect(w, r, "https://"+host+"/", http.StatusTemporaryRedirect)
 }
 
 type accountRequest struct {
@@ -71,7 +107,8 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	if !validHost(r) {
+	host := requestHost(r, r.Host)
+	if host == "" {
 		http.Error(w, "invalid host", http.StatusBadRequest)
 		return
 	}
@@ -82,7 +119,8 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Header.Get("Origin") != "https://"+r.Host {
+		origin, https := strings.CutPrefix(r.Header.Get("Origin"), "https://")
+		if !https || requestHost(r, origin) != host {
 			http.Error(w, "invalid origin", http.StatusForbidden)
 			return
 		}

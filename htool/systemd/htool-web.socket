@@ -3,7 +3,7 @@ Description=Houzzkit first-boot HTTPS (management port)
 After=systemd-sysusers.service
 
 [Socket]
-ListenStream=[::]:80
+ListenStream=[::]:443
 BindIPv6Only=both
 BindToDevice=eno1
 

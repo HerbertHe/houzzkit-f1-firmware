@@ -7,7 +7,7 @@
 - 设备为 Houzzkit Force1，RK3568、4 GB 内存、板载 32 GB eMMC，支持可选 M.2 NVMe SSD。
 - 首版采用 Armbian Ubuntu 24.04 LTS ARM64 Minimal。eMMC 承载 bootloader、`/boot` 和 ext4 根文件系统 `/`。通过 Rockchip USB 协议直接写入 eMMC。TF 卡和 `armbian-install` 均无需参与刷写。
 - 无 SSD 时系统可独立启动，Docker 可使用 eMMC。启用可选迁移后，Docker 引擎数据、应用持久数据、数据库和容器日志均置于 SSD。
-- 默认运行 `multi-user.target`，保留 HDMI TTY、串口诊断、SSH、双以太网口和 Avahi。`eno1` 使用与 Ubuntu 相同的 DHCP 配置及静态直连地址 `192.168.55.1/24`，其他有线网口使用 DHCP。SSH 禁止 root 登录。管理口上的首启页面可通过 `https://houzzkit.local:80` 或管理口实际 IP 访问。镜像不安装桌面、显示管理器、Xorg 或 Wayland。
+- 默认运行 `multi-user.target`，保留 HDMI TTY、串口诊断、SSH、双以太网口和 Avahi。`eno1` 使用与 Ubuntu 相同的 DHCP 配置及静态直连地址 `192.168.55.1/24`，其他有线网口使用 DHCP。SSH 禁止 root 登录。管理口上的首启页面可通过 `https://houzzkit.local` 或管理口实际 IP 访问。镜像不安装桌面、显示管理器、Xorg 或 Wayland。
 - 四个核心应用使用 Compose v2。Zigbee2MQTT 独占 Zigbee 协调器，Home Assistant 通过 MQTT 接入。1Panel 提供辅助管理入口。
 
 ## 2. 阶段一：建立 F1 板级构建配置

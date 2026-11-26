@@ -155,7 +155,7 @@ func runAccounts(listener net.Listener) error {
 
 func main() {
 	if len(os.Args) != 2 {
-		log.Fatal("usage: htool web|account")
+		log.Fatal("usage: htool web|redirect|account")
 	}
 	listener, err := activatedListener()
 	if err != nil {
@@ -165,10 +165,19 @@ func main() {
 	switch os.Args[1] {
 	case "web":
 		err = runWeb(listener)
+	case "redirect":
+		server := &http.Server{
+			Handler:           http.HandlerFunc(redirectHTTPS),
+			ReadHeaderTimeout: 5 * time.Second,
+			WriteTimeout:      5 * time.Second,
+			IdleTimeout:       15 * time.Second,
+			MaxHeaderBytes:    8192,
+		}
+		err = server.Serve(listener)
 	case "account":
 		err = runAccounts(listener)
 	default:
-		err = errors.New("usage: htool web|account")
+		err = errors.New("usage: htool web|redirect|account")
 	}
 	log.Fatal(err)
 }

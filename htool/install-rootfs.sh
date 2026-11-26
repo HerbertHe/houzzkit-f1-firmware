@@ -32,4 +32,4 @@ done
 systemd-sysusers --root="$rootfs" htool.conf
 # The first-boot form is the only source of the initial root password.
 usermod --root "$rootfs" --lock root
-systemctl --root="$rootfs" enable avahi-daemon.service htool-account.socket htool-web.socket
+systemctl --root="$rootfs" enable avahi-daemon.service htool-account.socket htool-web.socket htool-redirect.socket

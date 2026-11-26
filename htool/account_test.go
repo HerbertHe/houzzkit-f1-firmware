@@ -116,18 +116,18 @@ func TestSetupHTTPOriginAndRequestValidation(t *testing.T) {
 		host, local, origin, body string
 		want                      int
 	}{
-		{deviceHostname + ":80", "10.0.0.25", "https://" + deviceHostname + ":80", valid, 200},
-		{"10.0.0.25:80", "10.0.0.25", "https://10.0.0.25:80", valid, 200},
-		{"[fd00::25]:80", "fd00::25", "https://[fd00::25]:80", valid, 200},
-		{"10.0.0.25:80", "10.0.0.25", "https://example.org", valid, 403},
-		{"10.0.0.25:80", "10.0.0.25", "https://" + deviceHostname + ":80", valid, 403},
-		{"10.0.0.26:80", "10.0.0.25", "https://10.0.0.26:80", valid, 400},
+		{deviceHostname, "10.0.0.25", "https://" + deviceHostname, valid, 200},
+		{"10.0.0.25:443", "10.0.0.25", "https://10.0.0.25", valid, 200},
+		{"[fd00::25]", "fd00::25", "https://[fd00::25]:443", valid, 200},
+		{"10.0.0.25:443", "10.0.0.25", "https://example.org", valid, 403},
+		{"10.0.0.25:443", "10.0.0.25", "https://" + deviceHostname + ":443", valid, 403},
+		{"10.0.0.26:443", "10.0.0.25", "https://10.0.0.26:443", valid, 400},
 		{"10.0.0.25:8443", "10.0.0.25", "https://10.0.0.25:8443", valid, 400},
-		{"other.local:80", "10.0.0.25", "https://other.local:80", valid, 400},
-		{"10.0.0.25:80", "10.0.0.25", "https://10.0.0.25:80", valid + valid, 400},
-		{"10.0.0.25:80", "10.0.0.25", "https://10.0.0.25:80", strings.Repeat("x", 4097), 400},
+		{"other.local:443", "10.0.0.25", "https://other.local:443", valid, 400},
+		{"10.0.0.25:443", "10.0.0.25", "https://10.0.0.25:443", valid + valid, 400},
+		{"10.0.0.25:443", "10.0.0.25", "https://10.0.0.25:443", strings.Repeat("x", 4097), 400},
 	} {
-		local := &net.TCPAddr{IP: net.ParseIP(tc.local), Port: 80}
+		local := &net.TCPAddr{IP: net.ParseIP(tc.local), Port: 443}
 		ctx := context.WithValue(context.Background(), http.LocalAddrContextKey, local)
 		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "https://"+tc.host+"/api/v1/setup", strings.NewReader(tc.body))
 		req.Header.Set("Origin", tc.origin)
@@ -140,6 +140,29 @@ func TestSetupHTTPOriginAndRequestValidation(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Fatalf("backend called %d times", calls)
+	}
+}
+
+func TestHTTPRedirect(t *testing.T) {
+	for _, tc := range []struct {
+		method, host, local string
+		want                int
+		location            string
+	}{
+		{http.MethodGet, deviceHostname, "10.0.0.25", 307, "https://houzzkit.local/"},
+		{http.MethodGet, "10.0.0.25:80", "10.0.0.25", 307, "https://10.0.0.25:443/"},
+		{http.MethodHead, "[fd00::25]", "fd00::25", 307, "https://[fd00::25]:443/"},
+		{http.MethodPost, deviceHostname, "10.0.0.25", 405, ""},
+		{http.MethodGet, "other.local", "10.0.0.25", 400, ""},
+	} {
+		local := &net.TCPAddr{IP: net.ParseIP(tc.local), Port: 80}
+		ctx := context.WithValue(context.Background(), http.LocalAddrContextKey, local)
+		req := httptest.NewRequestWithContext(ctx, tc.method, "http://"+tc.host+"/?ignored=1", nil)
+		response := httptest.NewRecorder()
+		redirectHTTPS(response, req)
+		if response.Code != tc.want || response.Header().Get("Location") != tc.location {
+			t.Errorf("%s %s: status %d, Location %q", tc.method, tc.host, response.Code, response.Header().Get("Location"))
+		}
 	}
 }
 

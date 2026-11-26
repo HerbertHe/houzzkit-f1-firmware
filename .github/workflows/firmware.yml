@@ -45,7 +45,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             acl bc binfmt-support bison bsdextrautils build-essential bzip2 chrpath \
             cpio curl device-tree-compiler diffstat e2fsprogs expect fakeroot file flex \
-            g++-multilib gawk gcc-multilib git kmod libelf-dev liblz4-tool \
+            g++-multilib gawk gcc-multilib git kmod libelf-dev libgmp-dev liblz4-tool libmpc-dev \
             libncurses-dev libssl-dev live-build openssh-client patchelf pkg-config \
             python2 python3 python3-pip qemu-user-static rsync schroot texinfo \
             u-boot-tools unzip uuid-dev xz-utils zlib1g-dev zstd

@@ -1,33 +1,32 @@
 # Houzzkit Force1 Armbian 固件适配方案
 
-状态为实施与验收基线。当前仓库的 GitHub Actions 仍构建 Rockchip Ubuntu 24.04 整包。Armbian 镜像、F1 安装适配和 SSD 迁移功能须完成以下步骤后再交付。
+状态为实施与验收基线。仓库提供 Ubuntu 和 Armbian 构建入口。Armbian 首版交付必须是通过 F1 实机验证的 Rockchip USB 直刷整包。
 
 ## 1. 目标系统
 
 - 设备为 Houzzkit Force1，RK3568、4 GB 内存、板载 32 GB eMMC，支持可选 M.2 NVMe SSD。
-- 首版采用 Armbian Ubuntu 24.04 LTS ARM64 Minimal。eMMC 承载 bootloader、`/boot` 和 ext4 根文件系统 `/`。采用 Armbian 安装器的 `emmc` 模式。
+- 首版采用 Armbian Ubuntu 24.04 LTS ARM64 Minimal。eMMC 承载 bootloader、`/boot` 和 ext4 根文件系统 `/`。通过 Rockchip USB 协议直接写入 eMMC。TF 卡和 `armbian-install` 均无需参与刷写。
 - 无 SSD 时系统可独立启动，Docker 可使用 eMMC。启用可选迁移后，Docker 引擎数据、应用持久数据、数据库和容器日志均置于 SSD。
-- 默认运行 `multi-user.target`，保留 HDMI TTY、串口诊断、SSH、双以太网口和 Avahi。局域网主机名使用 `houzzkit.local`，HTTP 面板按实际端口访问。镜像不安装桌面、显示管理器、Xorg 或 Wayland。
+- 默认运行 `multi-user.target`，保留 HDMI TTY、串口诊断、SSH、双以太网口和 Avahi。`eno1` 使用与 Ubuntu 相同的静态 IPv4 地址 `192.168.55.1/24`，其他有线网口使用 DHCP。SSH 禁止 root 登录。局域网主机名使用 `houzzkit.local`，HTTP 面板按实际端口访问。镜像不安装桌面、显示管理器、Xorg 或 Wayland。
 - 四个核心应用使用 Compose v2。Zigbee2MQTT 独占 Zigbee 协调器，Home Assistant 通过 MQTT 接入。1Panel 提供辅助管理入口。
 
 ## 2. 阶段一：建立 F1 板级构建配置
 
 ### 固定构建输入
 
-在 Linux CI 上固定 Armbian Build Framework 提交、发行版 Noble、F1 BSP 提交和工具链版本。使用项目自有的 Armbian 板定义、补丁和镜像配置管理改动。板定义选用项目标识 `houzzkit-force1`；实现板定义和 BSP 引用后，再运行以下构建命令。所选内核分支以板定义中实际注册的 `BRANCH` 为准。
+[Armbian 专属工作流](../.github/workflows/firmware-armbian.yml)在 Linux runner 上调用共享的 F1 Rockchip 构建和发布逻辑。上游输入使用 [version.env](../houzzkit-f1-rootfs-armbian/version.env) 固定版本和提交，调用官方 Build Framework 的 rootfs 目标。此入口只生成 ARM64 Noble Minimal 用户态，板级内核和引导部分均由现有 F1 BSP 负责。
 
 ```bash
-./compile.sh build BOARD=houzzkit-force1 BRANCH=vendor RELEASE=noble \
-  BUILD_MINIMAL=yes BUILD_DESKTOP=no KERNEL_CONFIGURE=no
+./compile.sh rootfs houzzkit ARCH=arm64 RELEASE=noble BUILD_MINIMAL=yes BUILD_DESKTOP=no PREFER_DOCKER=yes
 ```
 
-首版沿用可在 F1 上验证的 Rockchip BSP 6.1 和 U-Boot 组合，建立 Armbian 内的板族适配或对应构建钩子。生成内核、DTB、initramfs、模块和板级固件包时固定来源版本。使用同一次内核构建的模块，不从旧 Ubuntu 快照直接复制 `.ko`。记录镜像的构建提交和所有输入版本。若上游 Armbian 后续提供经过验证的 F1 支持，再评估切换内核和 U-Boot。 [Armbian 板定义](https://docs.armbian.com/build-framework/adding-a-board/) · [Armbian 构建命令](https://docs.armbian.com/build-framework/commands/)
+`houzzkit` 配置包含项目规定的用户态包。F1 打包脚本以 Ubuntu 已用的板级配置为基础，给 Armbian 启用内存 cgroup、ZRAM 和 LZ4，从同一内核构建结果安装对应模块，再把生成的 ext4 送入共享 Rockchip 打包链。真机验收仍遵循下表。 [Armbian rootfs 命令](https://docs.armbian.com/build-framework/commands/advanced/#rootfs)
 
 ### 硬件验证基线
 
 | 部件 | 适配工作 | 实机验证 |
 | --- | --- | --- |
-| eMMC / microSD | 对照现有板级 DTS 和板载启动位置，确认 microSD 可引导，安装器能识别 eMMC，U-Boot 可从 eMMC 加载系统 | `lsblk`、串口启动日志、拔掉 microSD 后冷启动 |
+| eMMC / USB OTG | 沿用 F1 Rockchip 引导和分区布局。确认 LOADER / MASKROM 可识别，以及整包写入后 U-Boot 可从 eMMC 加载系统 | USB 刷写日志、串口启动日志、无 TF 卡及 SSD 的冷启动 |
 | PCIe / NVMe | 保留 regulator、复位 GPIO、PHY、pinctrl 和 NVMe 驱动。实测 M.2 插槽对应的控制器及链路，不以 DTS 节点名推断插槽速率 | `lspci -nn`、`lsblk`、`nvme list`、重启和冷启动 |
 | 双以太网 | 保留两路 GMAC、PHY、时钟与复位。以接口持久标识配置网络 | `ip -br link`、`ethtool`，两个端口分别连通 |
 | HDMI | 保留 Rockchip DRM、fbcon 和 `console=tty0`，启用 `getty@tty1.service`。串口控制台使用板上实测参数 | 接 HDMI 后出现 TTY 并可登录，默认目标为 `multi-user.target` |
@@ -35,16 +34,27 @@
 
 保留 ext4、overlayfs、namespace、内存 cgroup、容器联网与 `json-file` 运行所需的内核支持。ZRAM 和 LZ4 必须以目标镜像的实际内核配置和运行结果验收。相关板级源文件见 [F1 DTS](../houzzkit-f1-bsp-k6199/kernel-6.1/arch/arm64/boot/dts/rockchip/rk3568-jl-rm01.dtsi) 和 [F1 内核配置](../houzzkit-f1-bsp-k6199/kernel-6.1/arch/arm64/configs/jl_v1_linux_defconfig)。
 
-## 3. 阶段二：安装到 eMMC
+## 3. 阶段二：生成并验证 USB 直刷整包
 
-1. 先备份原厂镜像、设备数据和分区布局，确认能够按 [README 的 Rockchip 恢复路径](../README.md#刷机前准备)重新进入 LOADER 或 MASKROM。安装到 eMMC 会覆盖原系统。
-2. 将通过板级验证的 **F1 专用 Armbian microSD 磁盘镜像**写入 microSD。Windows 和 macOS 可用支持原始磁盘镜像的写卡工具。核对目标是 microSD，再开机测试 SSH、HDMI 和存储枚举。
-3. 在 F1 上用 `lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL` 核对当前启动介质和 eMMC。执行 `sudo armbian-install`，选择 eMMC 目标、`emmc` 模式与 ext4。若未出现支持的 eMMC 选项，回到板级适配检查，按键与刷机工具见根 README。
-4. 关机取出 microSD，在不插 SSD 的情况下冷启动。用 `findmnt -no SOURCE,FSTYPE /`、`findmnt -T /boot`、`lsblk -f` 确认系统与引导文件来自 eMMC。若 `/boot` 位于根分区而非独立分区，`findmnt -T /boot` 应显示同一 eMMC 文件系统。
+### 构建端
 
-eMMC 使用其余可用空间承载系统，首版不额外划分 `/emmc_storage`。系统启用 SSH，首次启动创建管理凭据，设备生成独立 SSH 主机密钥。禁止在镜像中写入通用登录密码。将 **至少 8 GiB 根分区可用空间**作为部署 SSD 模式后的容量验收目标。 [Armbian eMMC 安装](https://docs.armbian.com/getting-started/install-to-internal-storage/)
+1. 使用固定版本的 Armbian Build Framework 生成 Noble ARM64 Minimal 根文件系统。将保留 UID/GID、权限、链接和扩展属性的文件树送入 F1 构建流程，并生成经 `e2fsck -fn` 验证的 ext4 分区镜像。输入是 Armbian 根文件系统，输出是 F1 专用整包。
+2. 沿用 F1 BSP 的 Loader、U-Boot、板级 DTB、Recovery 和打包工具。对齐 eMMC `boot` 分区的 extlinux 配置、实际内核和 initramfs、Armbian 的 `/lib/modules/<kernel-release>`，核对根设备标识与 Rockchip 分区表指向同一 eMMC `rootfs` 分区。保留物理串口及 HDMI TTY 以便验证冷启动。
+3. 通过 F1 BSP 预构建 rootfs 接口接入 Armbian ext4，仅在 Armbian 构建入口中选择这一输入。沿用 BSP 的包清单及 `afptool` / `rkImageMaker` 流程，生成包含 Loader、分区表、U-Boot、`boot.img`、`recovery.img`、`misc.img` 和 `rootfs.img` 的 Rockchip `update.img`。检查各分区镜像尺寸、分区范围、包清单、`RKFW` 头和 SHA-256。现有 Rockchip 布局将剩余空间分给 `userdata`，如需为系统维护增加根分区空间，应显式调整并检查边界，不能直接假定 `/` 会用满 eMMC。
+4. 验证无令牌或通用私钥进入镜像。首次启动生成每台设备独立的 SSH 主机密钥。用户通过 [htool 网页首启](htool-first-boot.md)设置管理员密码和普通 SSH 账号。锁定 BSP 内核、DTB 和 U-Boot 的升级来源，整套升级先验证配套性。
+
+### 刷写端
+
+1. 备份设备上已有的系统和数据。准备 F1 专用的 Armbian 正式整包，核对校验值并解压为 `.img`。
+2. 按 [README 刷机前准备](../README.md#刷机前准备) 将 F1 通过 USB OTG 接到电脑，进入 LOADER，或在系统无法启动时进入 MASKROM。
+3. 在 Windows RKDevTool 选择 **升级固件** 并加载 Armbian 的 Rockchip 整包，或在 macOS 通过 Rockchip `upgrade_tool uf` 刷写。第三方 macOS 图形工具需单独完成 F1 实机兼容验收。
+4. 刷写后关闭供电，保持 TF 插槽和 NVMe 插槽为空，再重新上电。用 `findmnt -no SOURCE,FSTYPE /`、`lsblk -f` 核对根分区来自 eMMC，用串口日志检查实际从 eMMC 的 `boot` 分区加载，并验证 SSH、HDMI TTY 和双网口。BSP 的 `boot` 分区是否在运行中挂载为 `/boot`，由升级机制明确规定并同步到 `fstab`，避免更新写到错误位置。
+
+首版发布门槛是从 LOADER 和 MASKROM 完成 USB 整包刷写，并确认无 TF 卡、无 SSD 时可从 eMMC 冷启动。保留原厂整包作为恢复介质。将 **至少 8 GiB 根分区可用空间**作为部署 SSD 模式后的容量验收目标。
 
 ## 4. 阶段三：可选 SSD 数据盘与迁移
+
+下述 SSD 迁移和四项应用编排是部署与验收方案，基础固件提供 Docker 和 Compose，刷入后由用户执行配置。
 
 | 模式 | Docker 与应用数据 | SSD 故障行为 |
 | --- | --- | --- |
@@ -91,11 +101,11 @@ Docker `data-root` 只影响引擎自身的数据。使用 containerd image stor
 
 ## 6. CI、发布与验收
 
-Armbian 使用独立 Linux 工作流，固定构建输入，PR 产生测试产物，`main` 构建候选镜像，通过真机验收后再标为稳定版。交付物包括 F1 专用 microSD 镜像、SHA-256、构建版本清单、安装说明和 Compose 版本。Armbian 镜像使用例如 `houzzkit-firmware-armbian-noble-YYYY_MM_DD.img.zst` 的独立名称。Linux、DTB、U-Boot 和模块升级要作为配套版本验证，保留原厂恢复路径。所用第三方软件包含的许可与源码提供义务，按组件单独核对。
+Armbian 使用独立 Linux 工作流，固定构建输入，PR 产生测试产物，`main` 构建候选镜像，通过真机验收后再标为稳定版。交付物包括 F1 专用 Rockchip USB 直刷整包、SHA-256、构建版本清单、刷写说明和 Compose 版本。Armbian 镜像使用例如 `houzzkit-firmware-armbian_26.11.0-trunk.140-YYYY_MM_DD.img.zst` 的独立名称。Linux、DTB、U-Boot 和模块升级要作为配套版本验证，保留原厂恢复路径。所用第三方软件包含的许可与源码提供义务，按组件单独核对。
 
 | 顺序 | 操作 | 判定 |
 | --- | --- | --- |
-| 1 | 不装 SSD，从 eMMC 冷启动 | 根挂载在 eMMC，HDMI TTY、SSH、Avahi 双网口连通 |
+| 1 | 不插 TF 卡和 SSD，经 USB 分别验证 LOADER 与 MASKROM 刷写，然后从 eMMC 冷启动 | Rockchip 工具能识别并完成升级，根挂载在 eMMC，通过管理口完成 htool 网页首启、验证普通账号 SSH 和 `su -`，HDMI TTY、Avahi 与双网口可用 |
 | 2 | 关机安装 SSD，再验证两次冷启动 | NVMe 稳定识别，根分区仍位于 eMMC |
 | 3 | 迁移 Docker 和应用数据 | `docker info` 的 Docker Root Dir、containerd 数据、卷、应用数据库与容器日志均位于 SSD |
 | 4 | 关机取下已配置的 SSD，再启动 | 主系统和 SSH 正常，Docker 与核心栈暂停，未在 eMMC 上生成误用的数据目录 |

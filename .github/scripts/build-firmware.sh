@@ -2,10 +2,14 @@
 set -euo pipefail
 
 : "${RUNNER_TEMP:?Run this script with RUNNER_TEMP set to the output directory}"
+flavor=${1:-ubuntu}
 sdk="$PWD/houzzkit-f1-bsp-k6199"
+armbian_profile="$PWD/houzzkit-f1-rootfs-armbian"
 rootfs="$PWD/houzzkit-f1-rootfs-u2404"
 restore_script="$PWD/.github/scripts/restore-rootfs.py"
 defconfig=szzn_rk3568_jl-rzw-v1_ubuntu-lite-2404_defconfig
+ubuntu_defconfig=$defconfig
+rootfs_image="$sdk/rootfs/ubuntu-rootfs.img"
 
 chip="$sdk/device/rockchip/.chips/rk3566_rk3568"
 images="$sdk/device/rockchip/common/images"
@@ -47,14 +51,27 @@ for input in \
   "$sdk/kernel/arch/arm64/configs/jl_v1_linux_defconfig" \
   "$sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-jl-rm01.dts" \
   "$sdk/kernel/ramdisk.img" "$sdk/rkbin/RKBOOT/RK3568MINIALL.ini" \
-  "$sdk/u-boot/configs/rk3568_defconfig" "$sdk/rkbin/tools/mkimage" "$toolchain" \
-  "$rootfs/emptydirlist.txt" "$rootfs/permission.txt" "$rootfs/symlinks.txt" \
-  "$rootfs/ubuntu-rootfs/usr/lib/systemd/systemd"; do
+  "$sdk/u-boot/configs/rk3568_defconfig" "$sdk/rkbin/tools/mkimage" "$toolchain"; do
   require_file "$input"
 done
-if [[ ! -s "$library" ]]; then
-  require_file "$library.tar.gz"
-fi
+case "$flavor" in
+  ubuntu)
+    for input in "$rootfs/emptydirlist.txt" "$rootfs/permission.txt" "$rootfs/symlinks.txt" \
+      "$rootfs/ubuntu-rootfs/usr/lib/systemd/systemd"; do
+      require_file "$input"
+    done
+    if [[ ! -s "$library" ]]; then
+      require_file "$library.tar.gz"
+    fi
+    ;;
+  armbian)
+    for input in version.env config-houzzkit.conf prepare-rootfs.sh configure-rootfs.sh; do
+      require_file "$armbian_profile/$input"
+    done
+    docker info >/dev/null || fail "Armbian rootfs requires Docker on the Linux build runner"
+    ;;
+  *) fail "Unknown firmware variant: $flavor" ;;
+esac
 
 for tool in gcc python2 python3 dtc fakeroot hexdump zstd mke2fs e2fsck /usr/bin/time; do
   command -v "$tool" >/dev/null || fail "Host build tool is missing: $tool"
@@ -66,23 +83,58 @@ done
 "$toolchain" --version
 prepare_pack_tools
 
-(
-  cd "$rootfs"
-  sudo python3 "$restore_script"
+if [[ "$flavor" == ubuntu ]]; then
+  (cd "$rootfs" && sudo python3 "$restore_script")
+  rootfs_tree="$rootfs/ubuntu-rootfs"
+else
+  staging=$(mktemp -d "$RUNNER_TEMP/f1-armbian.XXXXXXXX")
+  arm_kernel=jl_v1_armbian_defconfig
+  defconfig=szzn_rk3568_jl-rzw-v1_armbian-noble_defconfig
+  rootfs_image="$sdk/rootfs/armbian-rootfs.img"
+  kernel_config="$sdk/kernel/arch/arm64/configs/$arm_kernel"
+  trap 'rm -f -- "$kernel_config" "$chip/$defconfig"; sudo rm -rf -- "$staging"' EXIT
+  sed -e 's|^PREBUILT_ROOTFS_IMG=.*|PREBUILT_ROOTFS_IMG="rootfs/armbian-rootfs.img"|' \
+    -e "s|^RK_KERNEL_CFG=.*|RK_KERNEL_CFG=\"$arm_kernel\"|" "$chip/$ubuntu_defconfig" > "$chip/$defconfig"
+  cp "$sdk/kernel/arch/arm64/configs/jl_v1_linux_defconfig" "$kernel_config"
+  "$sdk/kernel/scripts/config" --file "$kernel_config" -e MEMCG -e SWAP -e ZRAM -e CRYPTO_LZ4 \
+    -e DEVTMPFS -e DEVTMPFS_MOUNT
+  rootfs_tree="$staging/rootfs"
+  root_partuuid=$(sed -n 's/^uuid:rootfs=//p' "$chip/parameter-ubuntu-fit.txt")
+  [[ "$root_partuuid" =~ ^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$ ]] ||
+    fail "Invalid rootfs PARTUUID in the F1 partition table"
+  bash "$armbian_profile/prepare-rootfs.sh" "$rootfs_tree" "$rootfs/ubuntu-rootfs/usr/lib/firmware" "$root_partuuid"
 
-  # Size from allocated blocks, with space for the ext4 journal and inode tables.
-  read -r used_mib _ < <(sudo du -sm ubuntu-rootfs)
-  image="$sdk/rootfs/ubuntu-rootfs.img"
-  sudo mke2fs -q -t ext4 -F -m 0 -d ubuntu-rootfs \
-    "$image" "$((used_mib + used_mib / 5 + 256))M"
-  sudo chown "$(id -u):$(id -g)" "$image"
-  e2fsck -fn "$image"
-)
+  # Build the same boot target used by "all" and install its matching modules in /.
+  (cd "$sdk" && ./build.sh "$defconfig" && ./build.sh extboot </dev/null)
+  kernel_release=$(cat "$sdk/kernel/include/config/kernel.release")
+  modules="$sdk/kernel/extboot/lib/modules/$kernel_release"
+  require_file "$modules/modules.order"
+  sudo install -d "$rootfs_tree/usr/lib/modules/$kernel_release"
+  sudo rsync -a --exclude=build --exclude=source "$modules/" "$rootfs_tree/usr/lib/modules/$kernel_release/"
+  sudo depmod -b "$rootfs_tree" "$kernel_release"
+  for feature in MEMCG SWAP ZRAM CRYPTO_LZ4; do
+    grep -qx "CONFIG_$feature=y" "$sdk/kernel/.config" || fail "Missing Armbian kernel feature: $feature"
+  done
+fi
+
+require_file "$RUNNER_TEMP/htool-arm64"
+sudo bash "$PWD/htool/install-rootfs.sh" "$rootfs_tree" "$RUNNER_TEMP/htool-arm64"
+
+# Size from allocated blocks, with space for the ext4 journal and inode tables.
+read -r used_mib _ < <(sudo du -sm "$rootfs_tree")
+sudo mke2fs -q -t ext4 -F -m 0 -d "$rootfs_tree" \
+  "$rootfs_image" "$((used_mib + used_mib / 5 + 256))M"
+sudo chown "$(id -u):$(id -g)" "$rootfs_image"
+e2fsck -fn "$rootfs_image"
 
 (
   cd "$sdk"
   ./build.sh "$defconfig"
   ./build.sh all </dev/null
+  if [[ "$flavor" == armbian ]]; then
+    [[ "$(cat kernel/include/config/kernel.release)" == "$kernel_release" ]] ||
+      fail "Packaged kernel release differs from the modules installed in Armbian"
+  fi
 
   manifest=output/update/Image/package-file
   require_file "$manifest"

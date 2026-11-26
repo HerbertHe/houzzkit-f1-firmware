@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>htool · 初始化设备</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="device-page">
+    <header><span class="brand">htool</span><span class="device">HOUZZkit Force1</span></header>
+    <main>
+      <h1>初始化设备</h1>
+      <ol class="steps" aria-label="设置进度">
+        <li data-step="1" aria-current="step"><span>1</span>设置系统管理员密码</li>
+        <li data-step="2"><span>2</span>设置用户账号</li>
+      </ol>
+      <p id="message" role="status" aria-live="polite"></p>
+      <form id="setup" method="post">
+        <section data-panel="1" aria-labelledby="admin-title">
+          <div class="account">
+            <h2 id="admin-title">系统管理员</h2>
+            <p class="note"><code>root</code> · 用于系统维护</p>
+            <label for="root-password">管理员密码</label>
+            <input id="root-password" type="password" autocomplete="new-password" required minlength="12" maxlength="72" pattern="[!-~]+" aria-describedby="root-rule">
+            <label for="root-confirm">确认管理员密码</label>
+            <input id="root-confirm" type="password" autocomplete="new-password" required aria-describedby="root-rule">
+            <p class="rule" id="root-rule">12–72 个字符，可用英文字母、数字和标点。</p>
+          </div>
+          <footer><button class="primary" id="next" type="submit" disabled>下一步</button></footer>
+        </section>
+        <section data-panel="2" aria-labelledby="user-title" hidden>
+          <div class="account">
+            <h2 id="user-title">用户账号</h2>
+            <p class="note">用于 SSH 登录</p>
+            <label for="username">用户名</label>
+            <input id="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="32" aria-describedby="username-rule">
+            <p class="rule" id="username-rule">3–32 个字符，小写字母开头，可用数字、下划线和连字符。</p>
+            <label for="password">密码</label>
+            <input id="password" type="password" autocomplete="new-password" required minlength="12" maxlength="72" aria-describedby="password-rule">
+            <label for="confirm">确认密码</label>
+            <input id="confirm" type="password" autocomplete="new-password" required aria-describedby="password-rule">
+            <p class="rule" id="password-rule">12–72 个可见 ASCII 字符，且与管理员密码不同。</p>
+          </div>
+          <footer>
+            <button id="back" type="button">上一步</button>
+            <button class="primary" id="finish" type="submit" disabled>完成</button>
+          </footer>
+        </section>
+      </form>
+      <section id="done" class="account" aria-labelledby="done-title" hidden>
+        <h2 id="done-title">设置完成</h2>
+        <p class="note">在电脑终端用新建的用户账号登录。</p>
+        <pre><code id="ssh-command"></code></pre>
+        <p class="rule">需要管理系统时，运行 <code>su -</code> 并输入管理员密码。</p>
+      </section>
+      <noscript><p>请启用 JavaScript 以完成设备设置。</p></noscript>
+    </main>
+  </div>
+</body>
+</html>

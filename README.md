@@ -1,16 +1,19 @@
 # Houzzkit Force1 固件
 
-面向 HOUZZkit Force1（蓝精灵、Rockchip RK3568）的固件仓库。现有 GitHub Actions 使用 Rockchip BSP 和 Ubuntu 24.04 ARM64 根文件系统构建 Rockchip 整包。Armbian 是独立的适配计划，默认系统安装到 eMMC，Docker 数据可以扩展到 NVMe SSD。
+面向 HOUZZkit Force1（蓝精灵、Rockchip RK3568）的固件仓库。Ubuntu 24.04 和 Armbian Noble 使用同一套 F1 Rockchip BSP 和 USB 整包刷写流程。两种系统都以 eMMC 为启动和根存储，Armbian 方案支持后续将 Docker 数据迁到 NVMe。
 
 - [下载 GitHub Releases](https://github.com/HerbertHe/houzzkit-f1-firmware/releases)
 - [查看 GitHub Actions](https://github.com/HerbertHe/houzzkit-f1-firmware/actions/workflows/firmware.yml)
 - [Armbian 可执行适配方案](docs/armbian-adaptation.md)
+- [变更记录](CHANGELOG.md)
 
 | 路径 | 用途 |
 | --- | --- |
 | [houzzkit-f1-bsp-k6199](houzzkit-f1-bsp-k6199) | Rockchip BSP、U-Boot、Linux 6.1 内核、F1 设备树及刷机工具 |
 | [houzzkit-f1-rootfs-u2404](houzzkit-f1-rootfs-u2404) | Ubuntu 根文件系统快照、元数据和镜像生成脚本 |
-| [固件发布入口](.github/workflows/firmware.yml) | 按变更路径触发，并处理 Release 发布 |
+| [Ubuntu 工作流](.github/workflows/firmware.yml) | 构建 Ubuntu 24.04 固件 |
+| [Armbian 工作流](.github/workflows/firmware-armbian.yml) | 构建 Armbian Noble 固件 |
+| [Armbian 根文件系统适配](houzzkit-f1-rootfs-armbian) | 固定上游版本、配置板级用户态和首次启动 |
 | [可复用构建工作流](.github/workflows/firmware-build.yml) | 准备依赖、编译 BSP 与 Ubuntu rootfs、打包并上传固件 |
 
 ## 下载前先区分镜像
@@ -20,9 +23,9 @@
 | `houzzkit-firmware-ubuntu_24_04-YYYY_MM_DD[_N].img.zst` | 解压为 `.img` 后使用 Windows RKDevTool 或 macOS RKDevTool 图形界面的整包升级功能 |
 | 同名 `.img.zst.part-000`、`.part-001` 等 | 核验每个分卷，按编号合并，再解压 |
 | 单独的 `rootfs.img`、`boot.img`、`recovery.img` | BSP 分区镜像，仅用于有对应分区写入说明的维护流程 |
-| 将来发布的 F1 专用 Armbian microSD 镜像 | 按 Armbian 方案写入 microSD，启动后再安装到 eMMC |
+| `houzzkit-firmware-armbian_<版本>-YYYY_MM_DD[_N].img.zst` | 使用同一 USB OTG 整包方式直刷 eMMC。选取已完成真机验证的 F1 Release。 |
 
-Ubuntu Release 解压后得到的是 **Rockchip 整包**。不要用 `dd`、磁盘镜像写入器或 `rkdeveloptool wl 0` 将这个文件写入 eMMC。
+两种固件的 Release 解压后得到的是 **Rockchip 整包**。不要用 `dd`、磁盘镜像写入器或 `rkdeveloptool wl 0` 将这个文件写入 eMMC。
 
 ## 刷机前准备
 
@@ -124,11 +127,24 @@ sudo ./upgrade_tool uf "$HOME/Downloads/实际固件名称.img"
 
 ## 首次启动与构建
 
-首次开机先从 HDMI 查看启动状态，或在路由器中查看分配的地址。现有 Ubuntu rootfs 将 `eno1` 配置为 `192.168.55.1/24`。若使用该口直连，可给电脑设置同网段的其他地址。局域网支持 mDNS 时也可尝试 `houzzkit.local`。Ubuntu 镜像预装 SSH 和 Docker，局域网主机名解析与 HTTP 面板是两个独立功能。
+### 网页首启
 
-固件入口只在推送到 `main` 或向 `main` 提交或更新 PR，且改动涉及 BSP、Ubuntu rootfs、构建脚本或固件工作流时，调用 Linux runner 构建完整刷机包。只改根 README、`docs/` 或版权文件时跳过。可以在 `main` 手动运行作为例外。
+Ubuntu 和 Armbian 共用 [htool](htool) 首启向导，无需接 HDMI。
 
-`main` 构建成功后发布正式版，同仓库 PR 构建成功后发布预发行版，Fork PR 可下载 Actions 构建产物。每个 Release 的说明页记录对应的源提交、构建日志和校验文件。
+1. 用网线把电脑直连 F1 靠近 HDMI 的管理口。将电脑该网口临时设为 `192.168.55.2/24`，网关留空。
+2. 打开 `https://192.168.55.1:80`。设备首次启动时生成自己的 HTTPS 证书。只在确认电脑直连自己的 F1 时处理浏览器的证书提示。
+3. 在第一步为 `root` 设置管理员密码，第二步创建普通用户。完成页会给出 SSH 命令。用普通用户的密码登录，需要管理权限时执行 `su -` 并输入管理员密码。
+
+首启页面只接受管理口连接，无配对码，首个成功提交创建账号。注册完成后会锁定，重启后继续保持。两种固件均禁止 `root` 直接通过 SSH 登录。 [首启排查与恢复](docs/htool-first-boot.md)
+
+初始化完成后可在路由器上查询 DHCP 地址，或在支持 mDNS 的网络中尝试 `houzzkit.local`。运行 `findmnt -no SOURCE,FSTYPE /` 可核对根分区位于 eMMC。Ubuntu 版本读 `/etc/os-release`；Armbian 的版本与板名读 `/etc/armbian-release`。Armbian 的 NVMe 数据迁移与 Compose 部署见 [适配方案](docs/armbian-adaptation.md)。
+
+### GitHub Actions
+
+- **Ubuntu** 使用仓库中的 Ubuntu 24.04 ARM64 根文件树。**Armbian** 则由固定版本的官方 Build Framework 生成 Noble ARM64 Minimal 用户态，然后加入 F1 的固件文件、首启配置和相匹配的 BSP 内核模块。
+- 共享构建使用 F1 BSP 生成 boot、Recovery、U-Boot、分区表和 Rockchip `update.img`。两种固件共享包清单、镜像头、压缩校验和发布逻辑。
+- 推送到 `main` 或更新目标为 `main` 的 PR 时，某发行版的 rootfs、构建脚本或专属工作流改动触发对应构建。共享 BSP、htool 和共享工作流改动触发两种构建。只改根 README、`docs/` 或版权文件会跳过，`main` 也可手动触发。
+- `main` 构建成功后发布正式版，同仓库 PR 发布预发行版，Fork PR 可下载 Actions 构建产物。两种固件分别按北京时间编号。以 Armbian 为例，当天第一个是 `houzzkit-firmware-armbian_26.11.0-trunk.140-2026_11_26`，第二个加 `_1`。
 
 ## 许可证
 

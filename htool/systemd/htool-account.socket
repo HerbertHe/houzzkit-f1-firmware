@@ -1,0 +1,12 @@
+[Unit]
+Description=Houzzkit local first-boot account socket
+After=systemd-sysusers.service
+
+[Socket]
+ListenStream=/run/htool-account.sock
+SocketUser=htool
+SocketGroup=htool
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target

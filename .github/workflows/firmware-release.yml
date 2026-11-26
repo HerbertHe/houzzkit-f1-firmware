@@ -1,0 +1,95 @@
+name: Publish Rockchip firmware
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      firmware_prefix:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    # Fork builds keep their downloadable Actions artifact and use a read-only token.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor != 'dependabot[bot]')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      FIRMWARE_PREFIX: ${{ inputs.firmware_prefix }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TZ: Asia/Shanghai
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/firmware-release
+
+      - name: Publish to GitHub Releases
+        working-directory: ${{ runner.temp }}/firmware-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$FIRMWARE_PREFIX" =~ ^houzzkit-firmware-(ubuntu|armbian)_[0-9][0-9._a-zA-Z-]*$ ]]
+          base="$FIRMWARE_PREFIX-$(date +%Y_%m_%d)"
+          release_options=(--latest)
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            release_options=(--prerelease --latest=false)
+          fi
+
+          # The create-ref API reserves a unique name even when builds finish together.
+          # Both stable releases and PR prereleases use the same daily sequence.
+          for ((number = 0; ; number++)); do
+            tag="$base"
+            if ((number > 0)); then
+              tag="${base}_${number}"
+            fi
+            if response=$(gh api "repos/$GH_REPO/git/refs" \
+              -f "ref=refs/tags/$tag" -f "sha=$SOURCE_SHA" 2>&1); then
+              break
+            fi
+            if ! gh api "repos/$GH_REPO/git/ref/tags/$tag" --silent; then
+              printf '%s\n' "$response" >&2
+              exit 1
+            fi
+          done
+
+          image="$tag.img.zst"
+          notes=$(mktemp)
+          {
+            printf 'Source commit: `%s`\n\n' "$SOURCE_SHA"
+            printf 'Build: %s/%s/actions/runs/%s\n\n' "$GITHUB_SERVER_URL" "$GH_REPO" "$GITHUB_RUN_ID"
+            if [[ -n "$PR_NUMBER" ]]; then
+              printf 'Preview build from PR #%s.\n\n' "$PR_NUMBER"
+            fi
+          } > "$notes"
+          mv houzzkit-firmware.img.zst "$image"
+          assets=("$image")
+          if (( $(stat -c %s "$image") >= 2000000000 )); then
+            split -b 1900MB -d -a 3 "$image" "$image.part-"
+            assets=("$image".part-*)
+            printf 'Join the parts: `cat %s.part-* > %s`\n\n' "$image" "$image" >> "$notes"
+          fi
+          printf 'Verify the downloads with `sha256sum -c %s.sha256`.\n\n' "$tag" >> "$notes"
+          printf 'Unpack the flashable image with `zstd -d %s`.\n' "$image" >> "$notes"
+          sha256sum "${assets[@]}" > "$tag.sha256"
+          gh release create "$tag" "${assets[@]}" "$tag.sha256" \
+            --verify-tag --title "$tag" --notes-file "$notes" "${release_options[@]}"

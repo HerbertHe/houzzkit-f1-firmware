@@ -1,4 +1,4 @@
-name: Build Rockchip Ubuntu image
+name: Build Rockchip firmware image
 
 on:
   workflow_call:
@@ -7,6 +7,12 @@ on:
         description: Commit to build and package
         required: true
         type: string
+      flavor:
+        default: ubuntu
+        type: string
+    outputs:
+      firmware_prefix:
+        value: ${{ jobs.build.outputs.firmware_prefix }}
 
 permissions:
   contents: read
@@ -18,7 +24,9 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 240
+    outputs:
+      firmware_prefix: ${{ steps.variant.outputs.firmware_prefix }}
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
     steps:
@@ -38,6 +46,32 @@ jobs:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.4'
+          cache: false
+
+      - name: Test and cross-compile htool
+        working-directory: htool
+        run: |
+          go test -race ./...
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/htool-arm64" .
+
+      - name: Resolve firmware variant
+        id: variant
+        env:
+          FLAVOR: ${{ inputs.flavor }}
+        run: |
+          case "$FLAVOR" in
+            ubuntu) prefix=houzzkit-firmware-ubuntu_24_04 ;;
+            armbian)
+              source houzzkit-f1-rootfs-armbian/version.env
+              prefix="houzzkit-firmware-armbian_$ARMBIAN_VERSION"
+              ;;
+            *) exit 1 ;;
+          esac
+          printf 'firmware_prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
+
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -50,12 +84,14 @@ jobs:
             u-boot-tools unzip uuid-dev xz-utils zlib1g-dev zstd
 
       - name: Build and compress the flash image
-        run: bash .github/scripts/build-firmware.sh
+        env:
+          FLAVOR: ${{ inputs.flavor }}
+        run: bash .github/scripts/build-firmware.sh "$FLAVOR"
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: houzzkit-firmware-ubuntu
+          name: houzzkit-firmware-${{ inputs.flavor }}
           path: ${{ runner.temp }}/houzzkit-firmware.img.zst
           if-no-files-found: error
           compression-level: 0

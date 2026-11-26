@@ -1,0 +1,15 @@
+[Unit]
+Description=Houzzkit first-boot account setup
+
+[Service]
+ExecStart=/usr/local/bin/htool account
+StateDirectory=htool-account
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=yes
+ProtectSystem=full
+ReadWritePaths=/etc /home
+PrivateTmp=yes
+PrivateNetwork=yes

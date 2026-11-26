@@ -5,6 +5,7 @@
 *.ko
 *.itb
 *.its
+!/device/rockchip/.chips/rk3566_rk3568/boot4recovery.its
 *.builtin
 *.order
 *.dtb

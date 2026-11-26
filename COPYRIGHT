@@ -1,0 +1,10 @@
+Houzzkit F1 firmware project
+
+Copyright (C) 2026 Herbert He <Herbert.He0229@gmail.com>
+
+This notice covers Herbert He's original contributions to this repository.
+Those contributions are licensed under the GNU General Public License, version 3,
+as provided in LICENSE, unless a file specifies its own license.
+
+The Rockchip BSP, Linux kernel, U-Boot, Ubuntu packages, firmware blobs and
+vendor tools retain their respective copyright notices and license terms.

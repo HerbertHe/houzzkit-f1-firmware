@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: GPL-3.0-only
+/dts-v1/;
+
+/ {
+	description = "HOUZZkit F1 RK3568 recovery";
+	#address-cells = <1>;
+
+	images {
+		kernel {
+			description = "Linux arm64 kernel";
+			data = /incbin/("@KERNEL_IMG@");
+			type = "kernel";
+			arch = "arm64";
+			os = "linux";
+			compression = "none";
+			load = <0x00280000>;
+			entry = <0x00280000>;
+			hash-1 {
+				algo = "sha256";
+			};
+		};
+
+		fdt {
+			description = "HOUZZkit F1 device tree";
+			data = /incbin/("@KERNEL_DTB@");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x08300000>;
+			hash-1 {
+				algo = "sha256";
+			};
+		};
+
+		ramdisk {
+			description = "RK356x recovery initramfs";
+			data = /incbin/("@RAMDISK_IMG@");
+			type = "ramdisk";
+			arch = "arm64";
+			os = "linux";
+			// Keep the gzip stream intact for the Linux initramfs loader.
+			compression = "none";
+			load = <0x0a200000>;
+			hash-1 {
+				algo = "sha256";
+			};
+		};
+	};
+
+	configurations {
+		default = "recovery";
+		recovery {
+			description = "HOUZZkit F1 recovery configuration";
+			kernel = "kernel";
+			fdt = "fdt";
+			ramdisk = "ramdisk";
+		};
+	};
+};

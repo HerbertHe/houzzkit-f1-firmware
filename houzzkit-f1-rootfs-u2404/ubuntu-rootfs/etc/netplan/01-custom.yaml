@@ -2,8 +2,11 @@ network:
   version: 2
   renderer: networkd
   ethernets:
-    # LAN 口（静态 IP）
+    # 管理口（DHCP 和直连地址）
     eno1:
-      dhcp4: false     # 禁用 DHCP
+      dhcp4: true
+      dhcp4-overrides:
+        use-routes: false
+        use-dns: false
       addresses:
         - 192.168.55.1/24  #192.168.55.1 子网掩码255.255.255.0

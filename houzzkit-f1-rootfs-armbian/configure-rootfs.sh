@@ -23,14 +23,18 @@ printf 'PARTUUID=%s / ext4 defaults 0 1\n' "$root_partuuid" > "$rootfs/etc/fstab
 ln -sfn /run/systemd/resolve/stub-resolv.conf "$rootfs/etc/resolv.conf"
 truncate -s 0 "$rootfs/etc/machine-id"
 rm -f "$rootfs/root/.not_logged_in_yet" "$rootfs/usr/sbin/policy-rc.d"
-# networkd applies the first matching file. Give eno1 the Ubuntu service address.
+# Keep the direct-connect address while accepting a DHCP lease on eno1.
 cat > "$rootfs/etc/systemd/network/10-houzzkit-eno1.network" <<'EOF'
 [Match]
 Name=eno1
 
 [Network]
-DHCP=no
+DHCP=ipv4
 Address=192.168.55.1/24
+
+[DHCPv4]
+UseRoutes=no
+UseDNS=no
 EOF
 cat > "$rootfs/etc/systemd/network/20-houzzkit-ethernet.network" <<'EOF'
 [Match]

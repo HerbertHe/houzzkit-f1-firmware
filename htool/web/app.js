@@ -31,7 +31,8 @@ function completed(name) {
   showStep(3);
   form.hidden = true;
   field("done").hidden = false;
-  field("ssh-command").textContent = "ssh " + name + "@192.168.55.1";
+  const host = window.location.hostname.replace(/^\[|\]$/g, "");
+  field("ssh-command").textContent = "ssh " + name + "@" + host;
 }
 
 async function status() {

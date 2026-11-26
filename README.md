@@ -131,13 +131,13 @@ sudo ./upgrade_tool uf "$HOME/Downloads/实际固件名称.img"
 
 Ubuntu 和 Armbian 共用 [htool](htool) 首启向导，无需接 HDMI。
 
-1. 用网线把电脑直连 F1 靠近 HDMI 的管理口。将电脑该网口临时设为 `192.168.55.2/24`，网关留空。
-2. 打开 `https://192.168.55.1:80`。设备首次启动时生成自己的 HTTPS 证书。只在确认电脑直连自己的 F1 时处理浏览器的证书提示。
+1. 将 F1 靠近 HDMI 的管理口接入可信的局域网，电脑接入同一网络。打开 `https://houzzkit.local:80`。如果网络不支持 mDNS，可在路由器中查到管理口的 DHCP 地址，再用该 IP 加 `:80` 访问。
+2. 没有 DHCP 时，可网线直连。将电脑的直连网口设为 `192.168.55.2/24`，网关留空，再打开 `https://192.168.55.1:80`。设备生成自签名 HTTPS 证书，在确认设备身份后处理浏览器提示。
 3. 在第一步为 `root` 设置管理员密码，第二步创建普通用户。完成页会给出 SSH 命令。用普通用户的密码登录，需要管理权限时执行 `su -` 并输入管理员密码。
 
 首启页面只接受管理口连接，无配对码，首个成功提交创建账号。注册完成后会锁定，重启后继续保持。两种固件均禁止 `root` 直接通过 SSH 登录。 [首启排查与恢复](docs/htool-first-boot.md)
 
-初始化完成后可在路由器上查询 DHCP 地址，或在支持 mDNS 的网络中尝试 `houzzkit.local`。运行 `findmnt -no SOURCE,FSTYPE /` 可核对根分区位于 eMMC。Ubuntu 版本读 `/etc/os-release`；Armbian 的版本与板名读 `/etc/armbian-release`。Armbian 的 NVMe 数据迁移与 Compose 部署见 [适配方案](docs/armbian-adaptation.md)。
+初始化完成后，SSH 可以使用完成页提供的主机名或 IP。运行 `findmnt -no SOURCE,FSTYPE /` 可核对根分区位于 eMMC。Ubuntu 版本读 `/etc/os-release`；Armbian 的版本与板名读 `/etc/armbian-release`。Armbian 的 NVMe 数据迁移与 Compose 部署见 [适配方案](docs/armbian-adaptation.md)。
 
 ### GitHub Actions
 

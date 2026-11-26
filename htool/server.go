@@ -6,13 +6,31 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
 //go:embed web/*
 var assets embed.FS
 
-const managementHost = "192.168.55.1:80"
+const deviceHostname = "houzzkit.local"
+
+func isDeviceHostname(host string) bool {
+	return strings.EqualFold(strings.TrimSuffix(host, "."), deviceHostname)
+}
+
+func validHost(r *http.Request) bool {
+	local, ok := r.Context().Value(http.LocalAddrContextKey).(*net.TCPAddr)
+	if !ok {
+		return false
+	}
+	host, port, err := net.SplitHostPort(r.Host)
+	if err != nil || port != strconv.Itoa(local.Port) {
+		return false
+	}
+	return isDeviceHostname(host) || local.IP.Equal(net.ParseIP(host))
+}
 
 type accountRequest struct {
 	Setup *setupRequest `json:"setup,omitempty"`
@@ -53,7 +71,7 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	if r.Host != managementHost {
+	if !validHost(r) {
 		http.Error(w, "invalid host", http.StatusBadRequest)
 		return
 	}
@@ -64,7 +82,7 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Header.Get("Origin") != "https://"+managementHost {
+		if r.Header.Get("Origin") != "https://"+r.Host {
 			http.Error(w, "invalid origin", http.StatusForbidden)
 			return
 		}

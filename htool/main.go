@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -16,7 +17,9 @@ import (
 	"net/http"
 	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -31,7 +34,7 @@ func activatedListener() (net.Listener, error) {
 	return net.FileListener(file)
 }
 
-func certificate(path string) (tls.Certificate, error) {
+func certificate(path string, ip net.IP) (tls.Certificate, error) {
 	if data, err := os.ReadFile(path); err == nil {
 		return tls.X509KeyPair(data, data)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -51,11 +54,14 @@ func certificate(path string) (tls.Certificate, error) {
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: "Houzzkit Force1"},
-		IPAddresses:  []net.IP{net.ParseIP("192.168.55.1")},
+		DNSNames:     []string{deviceHostname},
 		NotBefore:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		NotAfter:     time.Date(2050, 1, 1, 0, 0, 0, 0, time.UTC),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	if ip != nil {
+		template.IPAddresses = []net.IP{ip}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
@@ -73,11 +79,28 @@ func certificate(path string) (tls.Certificate, error) {
 	return tls.X509KeyPair(data, data)
 }
 
-func runWeb(listener net.Listener) error {
-	cert, err := certificate("/var/lib/htool-web/device.pem")
-	if err != nil {
-		return err
+// The accepted socket address reflects DHCP changes without a service restart.
+func deviceCertificates(dir string) func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	var mu sync.Mutex
+	return func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		filename := deviceHostname + ".pem"
+		var ip net.IP
+		if !isDeviceHostname(hello.ServerName) {
+			local, ok := hello.Conn.LocalAddr().(*net.TCPAddr)
+			if !ok || local.IP.To16() == nil {
+				return nil, errors.New("missing local TLS address")
+			}
+			ip = local.IP.To16()
+			filename = "ip-" + hex.EncodeToString(ip) + ".pem"
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		cert, err := certificate(filepath.Join(dir, filename), ip)
+		return &cert, err
 	}
+}
+
+func runWeb(listener net.Listener) error {
 	server := &http.Server{
 		Handler:           webHandler{request: requestAccount},
 		ReadHeaderTimeout: 5 * time.Second,
@@ -85,7 +108,7 @@ func runWeb(listener net.Listener) error {
 		WriteTimeout:      40 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    8192,
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}},
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: deviceCertificates("/var/lib/htool-web")},
 	}
 	return server.ServeTLS(listener, "", "")
 }

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -111,16 +113,23 @@ func TestSetupHTTPOriginAndRequestValidation(t *testing.T) {
 	}}
 	valid := `{"username":"homeuser","password":"daily-password-1","rootPassword":"root-password-2"}`
 	for _, tc := range []struct {
-		host, origin, body string
-		want               int
+		host, local, origin, body string
+		want                      int
 	}{
-		{managementHost, "https://" + managementHost, valid, 200},
-		{managementHost, "https://example.org", valid, 403},
-		{"other.local", "https://" + managementHost, valid, 400},
-		{managementHost, "https://" + managementHost, valid + valid, 400},
-		{managementHost, "https://" + managementHost, strings.Repeat("x", 4097), 400},
+		{deviceHostname + ":80", "10.0.0.25", "https://" + deviceHostname + ":80", valid, 200},
+		{"10.0.0.25:80", "10.0.0.25", "https://10.0.0.25:80", valid, 200},
+		{"[fd00::25]:80", "fd00::25", "https://[fd00::25]:80", valid, 200},
+		{"10.0.0.25:80", "10.0.0.25", "https://example.org", valid, 403},
+		{"10.0.0.25:80", "10.0.0.25", "https://" + deviceHostname + ":80", valid, 403},
+		{"10.0.0.26:80", "10.0.0.25", "https://10.0.0.26:80", valid, 400},
+		{"10.0.0.25:8443", "10.0.0.25", "https://10.0.0.25:8443", valid, 400},
+		{"other.local:80", "10.0.0.25", "https://other.local:80", valid, 400},
+		{"10.0.0.25:80", "10.0.0.25", "https://10.0.0.25:80", valid + valid, 400},
+		{"10.0.0.25:80", "10.0.0.25", "https://10.0.0.25:80", strings.Repeat("x", 4097), 400},
 	} {
-		req := httptest.NewRequest(http.MethodPost, "https://"+tc.host+"/api/v1/setup", strings.NewReader(tc.body))
+		local := &net.TCPAddr{IP: net.ParseIP(tc.local), Port: 80}
+		ctx := context.WithValue(context.Background(), http.LocalAddrContextKey, local)
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "https://"+tc.host+"/api/v1/setup", strings.NewReader(tc.body))
 		req.Header.Set("Origin", tc.origin)
 		req.Header.Set("Content-Type", "application/json")
 		result := httptest.NewRecorder()
@@ -129,20 +138,25 @@ func TestSetupHTTPOriginAndRequestValidation(t *testing.T) {
 			t.Fatalf("HTTP %d, expected %d", result.Code, tc.want)
 		}
 	}
-	if calls != 1 {
+	if calls != 3 {
 		t.Fatalf("backend called %d times", calls)
 	}
 }
 
 func TestCertificatePersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "device.pem")
-	first, err := certificate(path)
+	first, err := certificate(path, net.ParseIP("10.0.0.25"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := certificate(path)
+	next, err := certificate(path, net.ParseIP("10.0.0.25"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, host := range []string{deviceHostname, "10.0.0.25"} {
+		if err := first.Leaf.VerifyHostname(host); err != nil {
+			t.Fatalf("missing certificate SAN for %s: %v", host, err)
+		}
 	}
 	if string(first.Certificate[0]) != string(next.Certificate[0]) {
 		t.Fatal("certificate changed on restart")

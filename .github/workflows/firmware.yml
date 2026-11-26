@@ -47,7 +47,7 @@ jobs:
             cpio curl device-tree-compiler diffstat e2fsprogs expect fakeroot file flex \
             g++-multilib gawk gcc-multilib git kmod libelf-dev libgmp-dev liblz4-tool libmpc-dev \
             libncurses-dev libssl-dev live-build openssh-client patchelf pkg-config \
-            python2 python3 python3-pip qemu-user-static rsync schroot texinfo \
+            python2 python3 python3-pip qemu-user-static rsync schroot texinfo time \
             u-boot-tools unzip uuid-dev xz-utils zlib1g-dev zstd
 
       - name: Build and compress the flash image

@@ -11,6 +11,7 @@
 *.dtb
 *.cmd
 *.img
+!/device/rockchip/common/images/wipe_all-misc.img
 *.su
 *.tmp
 *.swp

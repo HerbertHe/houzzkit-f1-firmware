@@ -106,6 +106,10 @@ build_firmware()
 	for f in "$FIRMWARE_DIR"/*; do
 		NAME=$(basename "$f")
 
+		if [ -L "$f" ] && [ ! -e "$f" ]; then
+			fatal "Missing firmware input for $NAME: $(readlink "$f")"
+		fi
+
 		echo -n "$NAME"
 		if [ -L "$f" ]; then
 			echo -n "($(readlink -f "$f"))"

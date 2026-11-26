@@ -3,9 +3,23 @@ name: Build Ubuntu firmware
 on:
   push:
     branches: [main]
+    paths:
+      - 'houzzkit-f1-bsp-k6199/**'
+      - 'houzzkit-f1-rootfs-u2404/**'
+      - '.github/scripts/build-firmware.sh'
+      - '.github/scripts/restore-rootfs.py'
+      - '.github/workflows/firmware.yml'
+      - '.github/workflows/firmware-build.yml'
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
+    paths:
+      - 'houzzkit-f1-bsp-k6199/**'
+      - 'houzzkit-f1-rootfs-u2404/**'
+      - '.github/scripts/build-firmware.sh'
+      - '.github/scripts/restore-rootfs.py'
+      - '.github/workflows/firmware.yml'
+      - '.github/workflows/firmware-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,49 +32,9 @@ defaults:
 jobs:
   build:
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-22.04
-    timeout-minutes: 180
-    env:
-      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-    steps:
-      - name: Make space for the Rockchip SDK
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
-          sudo apt-get clean
-          df -h "$GITHUB_WORKSPACE"
-          free_mib=$(df -Pm "$GITHUB_WORKSPACE" | awk 'NR == 2 {print $4}')
-          if ((free_mib < 28672)); then
-            echo "::error::The SDK, rootfs and package intermediates need at least 28 GiB free before checkout."
-            exit 1
-          fi
-
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.SOURCE_SHA }}
-          persist-credentials: false
-
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            acl bc binfmt-support bison bsdextrautils build-essential bzip2 chrpath \
-            cpio curl device-tree-compiler diffstat e2fsprogs expect fakeroot file flex \
-            g++-multilib gawk gcc-multilib git kmod libelf-dev libgmp-dev liblz4-tool libmpc-dev \
-            libncurses-dev libssl-dev live-build openssh-client patchelf pkg-config \
-            python2 python3 python3-pip qemu-user-static rsync schroot texinfo time \
-            u-boot-tools unzip uuid-dev xz-utils zlib1g-dev zstd
-
-      - name: Build and compress the flash image
-        run: bash .github/scripts/build-firmware.sh
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: houzzkit-firmware-ubuntu
-          path: ${{ runner.temp }}/houzzkit-firmware.img.zst
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
+    uses: ./.github/workflows/firmware-build.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
 
   release:
     needs: build

@@ -117,11 +117,10 @@ generate_ffimage(){
 		IMGNAME+=-${os_version}
 	fi
 
-	local sdk_version=""
-	local manifest=$(realpath ${SDK_DIR}/.repo/manifest.xml)
-	if [[ -f $manifest ]]; then
-		manifest=$(basename $(realpath ${SDK_DIR}/.repo/manifest.xml) .xml)
-		sdk_version=$(echo $manifest | sed -n 's/.*[-_]\([vV][0-9.a-zA-Z]*\).*/\1/p')
+	local sdk_version manifest
+	if [[ -f "$SDK_DIR/.repo/manifest.xml" ]]; then
+		manifest=$(basename "$(realpath "$SDK_DIR/.repo/manifest.xml")" .xml)
+		sdk_version=$(printf '%s\n' "$manifest" | sed -n 's/.*[-_]\([vV][0-9.a-zA-Z]*\).*/\1/p')
 		IMGNAME+=_${sdk_version}
 	fi
 

@@ -93,6 +93,8 @@ prepare_pack_tools
   done
   image=output/firmware/update.img
   require_file "$image"
+  # The BSP publishes this path as a symlink. zstd expects a regular file.
+  image=$(realpath "$image")
   [[ "$(head -c 4 "$image")" == RKFW ]] || fail "Invalid Rockchip firmware header: $image"
   compressed="$RUNNER_TEMP/houzzkit-firmware.img.zst"
   zstd -T0 -6 "$image" -o "$compressed"

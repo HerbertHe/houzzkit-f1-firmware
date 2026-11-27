@@ -124,6 +124,9 @@ if [[ "$flavor" == armbian ]]; then
 fi
 
 sudo bash "$PWD/.github/scripts/configure-apt-sources.sh" "$rootfs_tree" "$flavor"
+if [[ "$flavor" == ubuntu ]]; then
+  sudo unshare --mount --propagation private bash "$PWD/.github/scripts/install-ubuntu-compose.sh" "$rootfs_tree"
+fi
 
 case "$flavor" in
   ubuntu) distro_version=24.04 ;;

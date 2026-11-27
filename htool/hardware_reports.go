@@ -74,9 +74,15 @@ func (m *hardwareManager) recordBoot() {
 		}
 	}
 
-	// Allow normal device enumeration to settle without delaying the workbench.
+	// Keep the last complete report visible while slow devices enumerate.
+	deadline := time.Now().Add(18 * time.Second)
 	time.Sleep(5 * time.Second)
-	report := bootReport{BootID: bootID, Checked: time.Now().UTC(), Checks: m.systemChecks()}
+	checks := m.systemChecks()
+	for delay := time.Until(deadline); checksNeedRetry(checks) && delay > 0; delay = time.Until(deadline) {
+		time.Sleep(min(3*time.Second, delay))
+		checks = m.systemChecks()
+	}
+	report := bootReport{BootID: bootID, Checked: time.Now().UTC(), Checks: checks}
 	for _, c := range report.Checks {
 		log.Printf("boot-check boot=%s check=%q state=%s detail=%q", bootID, c.Name, c.State, c.Detail)
 	}
@@ -87,6 +93,20 @@ func (m *hardwareManager) recordBoot() {
 	if err != nil {
 		m.bootReportFailure(err)
 	}
+}
+
+func checksNeedRetry(checks []bootCheck) bool {
+	for _, check := range checks {
+		switch check.State {
+		case "error", "missing", "partial", "timeout", "unknown":
+			return true
+		case "enumerated":
+			if check.Name == "蓝牙" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func retainBootReport(history []bootReport, report bootReport) []bootReport {

@@ -107,3 +107,36 @@ func TestHardwareEndpointsRejectAnonymousRequests(t *testing.T) {
 		}
 	}
 }
+
+func TestPhysicalUSBLinkIgnoresDuplicateSerialAlias(t *testing.T) {
+	serial := "/dev/serial/by-id/usb-identical"
+	selected := "/dev/serial/by-path/first-port"
+	duplicate := "/dev/serial/by-path/second-port"
+	resolve := func(link string) (string, error) {
+		if link == selected {
+			return "/dev/ttyUSB0", nil
+		}
+		return "/dev/ttyUSB1", nil
+	}
+	if got := physicalUSBLink("/dev/ttyUSB0", []string{serial, duplicate, selected}, resolve); got != selected {
+		t.Fatalf("selected %q instead of the verified port", got)
+	}
+	if got := physicalUSBLink("/dev/ttyUSB1", []string{serial}, resolve); got != "" {
+		t.Fatalf("accepted the serial alias without a verified port: %q", got)
+	}
+}
+
+func TestBootChecksRetrySlowHardware(t *testing.T) {
+	if !checksNeedRetry([]bootCheck{{Name: "Wi-Fi", State: "missing"}}) ||
+		!checksNeedRetry([]bootCheck{{Name: "蓝牙", State: "enumerated"}}) ||
+		!checksNeedRetry([]bootCheck{{Name: "Zigbee", State: "missing"}}) {
+		t.Fatal("late enumeration did not request another sample")
+	}
+	if checksNeedRetry([]bootCheck{
+		{Name: "NVMe", State: "optional-absent"},
+		{Name: "Wi-Fi", State: "enumerated"},
+		{Name: "Zigbee", State: "unbound"},
+	}) {
+		t.Fatal("optional hardware or an unbound coordinator delayed reporting")
+	}
+}

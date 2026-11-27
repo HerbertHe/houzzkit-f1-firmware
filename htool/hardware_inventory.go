@@ -159,19 +159,23 @@ func serialInventory() ([]serialCandidate, error) {
 }
 
 func (c serialCandidate) target() string {
-	// Keep the link tied to udev identity when the USB driver provides a stable link.
-	prefix := "/dev/serial/by-path/"
-	if c.Identity.Serial != "" {
-		prefix = "/dev/serial/by-id/"
-	}
 	if c.Identity.Kind == "usb" {
-		for _, link := range c.links {
-			resolved, err := filepath.EvalSymlinks(link)
-			if err == nil && strings.HasPrefix(link, prefix) && resolved == c.Path {
-				return link
-			}
-		}
-		return ""
+		// Duplicate serial numbers can retarget udev's by-id link to another port.
+		// Use the currently verified physical path even for devices with serial numbers.
+		return physicalUSBLink(c.Path, c.links, filepath.EvalSymlinks)
 	}
 	return c.Path
+}
+
+func physicalUSBLink(node string, links []string, resolve func(string) (string, error)) string {
+	for _, link := range links {
+		if !strings.HasPrefix(link, "/dev/serial/by-path/") {
+			continue
+		}
+		resolved, err := resolve(link)
+		if err == nil && resolved == node {
+			return link
+		}
+	}
+	return ""
 }

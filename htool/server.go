@@ -65,7 +65,12 @@ func redirectHTTPS(w http.ResponseWriter, r *http.Request) {
 	if !isDeviceHostname(host) {
 		host += ":443"
 	}
-	http.Redirect(w, r, "https://"+host+"/", http.StatusTemporaryRedirect)
+	path := "/"
+	switch r.URL.Path {
+	case "/welcome", "/login", "/hardware/boot-checks", "/firmware":
+		path = r.URL.Path
+	}
+	http.Redirect(w, r, "https://"+host+path, http.StatusTemporaryRedirect)
 }
 
 type accountRequest struct {

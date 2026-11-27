@@ -163,19 +163,21 @@ func TestSetupHTTPOriginAndRequestValidation(t *testing.T) {
 
 func TestHTTPRedirect(t *testing.T) {
 	for _, tc := range []struct {
-		method, host, local string
-		want                int
-		location            string
+		method, host, local, path string
+		want                      int
+		location                  string
 	}{
-		{http.MethodGet, deviceHostname, "10.0.0.25", 307, "https://houzzkit.local/"},
-		{http.MethodGet, "10.0.0.25:80", "10.0.0.25", 307, "https://10.0.0.25:443/"},
-		{http.MethodHead, "[fd00::25]", "fd00::25", 307, "https://[fd00::25]:443/"},
-		{http.MethodPost, deviceHostname, "10.0.0.25", 405, ""},
-		{http.MethodGet, "other.local", "10.0.0.25", 400, ""},
+		{http.MethodGet, deviceHostname, "10.0.0.25", "/", 307, "https://houzzkit.local/"},
+		{http.MethodGet, "10.0.0.25:80", "10.0.0.25", "/", 307, "https://10.0.0.25:443/"},
+		{http.MethodHead, "[fd00::25]", "fd00::25", "/", 307, "https://[fd00::25]:443/"},
+		{http.MethodPost, deviceHostname, "10.0.0.25", "/", 405, ""},
+		{http.MethodGet, "other.local", "10.0.0.25", "/", 400, ""},
+		{http.MethodGet, deviceHostname, "10.0.0.25", "/firmware", 307, "https://houzzkit.local/firmware"},
+		{http.MethodGet, "10.0.0.25:80", "10.0.0.25", "/hardware/boot-checks", 307, "https://10.0.0.25:443/hardware/boot-checks"},
 	} {
 		local := &net.TCPAddr{IP: net.ParseIP(tc.local), Port: 80}
 		ctx := context.WithValue(context.Background(), http.LocalAddrContextKey, local)
-		req := httptest.NewRequestWithContext(ctx, tc.method, "http://"+tc.host+"/?ignored=1", nil)
+		req := httptest.NewRequestWithContext(ctx, tc.method, "http://"+tc.host+tc.path+"?ignored=1", nil)
 		response := httptest.NewRecorder()
 		redirectHTTPS(response, req)
 		if response.Code != tc.want || response.Header().Get("Location") != tc.location {

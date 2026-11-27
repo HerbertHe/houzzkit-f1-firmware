@@ -23,7 +23,7 @@
 | `houzzkit-firmware-ubuntu-YYYY_MM_DD[_N].img.zst` | 解压为 `.img` 后使用 Windows RKDevTool 或 macOS RKDevTool 图形界面的整包升级功能 |
 | 同名 `.img.zst.part-000`、`.part-001` 等 | 核验每个分卷，按编号合并，再解压 |
 | 单独的 `rootfs.img`、`boot.img`、`recovery.img` | BSP 分区镜像，仅用于有对应分区写入说明的维护流程 |
-| `houzzkit-firmware-armbian-YYYY_MM_DD[_N].img.zst` | 使用同一 USB OTG 整包方式直刷 eMMC。选取已完成真机验证的 F1 Release。 |
+| `houzzkit-firmware-armbian-YYYY_MM_DD[_N].img.zst` | 解压为 `.img` 后，使用相同的 USB OTG 整包流程直刷 eMMC。 |
 
 两种固件的 Release 解压后得到的是 **Rockchip 整包**。不要用 `dd`、磁盘镜像写入器或 `rkdeveloptool wl 0` 将这个文件写入 eMMC。
 

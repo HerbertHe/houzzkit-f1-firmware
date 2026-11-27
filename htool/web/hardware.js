@@ -46,7 +46,7 @@ if (hardwareRoute === "/") {
   }
 
   function display(result) {
-    const previous = select.value;
+    const previous = mapping?.revision === result.revision ? select.value : "";
     mapping = result;
     candidates = result.candidates || [];
     const device = result.device ? result.device + " → " + result.alias : identityText(result.binding);
@@ -69,7 +69,7 @@ if (hardwareRoute === "/") {
       const data = operation ? await hardwareFetch("/api/v1/hardware/binding", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({operation, candidate}),
+        body: JSON.stringify({operation, candidate, revision: mapping?.revision}),
       }) : await hardwareFetch("/api/v1/hardware");
       display(data.mapping);
     } catch (error) {

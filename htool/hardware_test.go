@@ -23,7 +23,7 @@ func TestMappingPersistenceAndConflict(t *testing.T) {
 		},
 	}
 
-	reply := manager.mapping(hardwareRequest{Operation: "bind", Candidate: candidate.ID})
+	reply := manager.mapping(hardwareRequest{Operation: "bind", Candidate: candidate.ID, Revision: initialBindingRevision})
 	if reply.Mapping == nil || reply.Mapping.State != "connected" {
 		t.Fatalf("binding failed: %+v", reply)
 	}
@@ -63,10 +63,10 @@ func TestMappingPersistenceAndConflict(t *testing.T) {
 		return list, nil
 	}
 	candidates = append(candidates, newCandidate)
-	if reply := restarted.mapping(hardwareRequest{Operation: "bind", Candidate: newCandidate.ID}); reply.Code != 409 {
+	if reply := restarted.mapping(hardwareRequest{Operation: "bind", Candidate: newCandidate.ID, Revision: reply.Mapping.Revision}); reply.Code != 409 {
 		t.Fatalf("unplugged replacement unexpectedly bound: %+v", reply)
 	}
-	if binding, err := restarted.binding(); err != nil || binding == nil || *binding != known {
+	if binding, err := restarted.binding(); err != nil || binding.Device == nil || *binding.Device != known {
 		t.Fatalf("failed change did not restore previous binding: %+v, %v", binding, err)
 	}
 }
@@ -170,7 +170,7 @@ func TestRecoverPendingBindingUsesLastDurableCommit(t *testing.T) {
 			configDir: dir, alias: filepath.Join(dir, "alias"), ownedLink: filepath.Join(dir, "coordinator"),
 			inventory: func() ([]serialCandidate, error) { return []serialCandidate{old, next}, nil },
 		}
-		if err := writeBinding(filepath.Join(dir, "zigbee.json"), &want.Identity); err != nil {
+		if err := saveHardwareState(filepath.Join(dir, "zigbee.json"), &want.Identity); err != nil {
 			t.Fatal(err)
 		}
 		if err := saveHardwareState(manager.pendingPath(), map[string]deviceIdentity{"target": next.Identity}); err != nil {
@@ -204,5 +204,31 @@ func TestBootRetryDistinguishesWaitingFromConflict(t *testing.T) {
 	status, err = manager.reconcile(&device, []serialCandidate{waiting, waiting})
 	if err != nil || status.State != "conflict" || checksNeedRetry([]bootCheck{{Name: "Zigbee", State: status.State}}) {
 		t.Fatalf("duplicate identity was not distinguished from waiting: %+v, %v", status, err)
+	}
+}
+
+func TestStaleBindingRevisionRemainsInvalidAfterUnbind(t *testing.T) {
+	dir := t.TempDir()
+	c := serialCandidate{ID: "device", Path: "/dev/ttyS4", Available: true, Identity: deviceIdentity{Kind: "uart", Topology: "first"}}
+	m := &hardwareManager{configDir: dir, alias: filepath.Join(dir, "alias"), ownedLink: filepath.Join(dir, "coordinator"),
+		inventory: func() ([]serialCandidate, error) { return []serialCandidate{c}, nil }}
+	first := m.mapping(hardwareRequest{Operation: "bind", Revision: initialBindingRevision, Candidate: c.ID})
+	if first.Mapping == nil || first.Mapping.Revision == initialBindingRevision {
+		t.Fatalf("bind did not advance revision: %+v", first)
+	}
+	if stale := m.mapping(hardwareRequest{Operation: "unbind", Revision: initialBindingRevision}); stale.Code != 409 {
+		t.Fatalf("stale unbind accepted: %+v", stale)
+	}
+	state, err := m.binding()
+	if err != nil || state.Device == nil || state.Revision != first.Mapping.Revision {
+		t.Fatalf("stale request changed active state: %+v, %v", state, err)
+	}
+	unbound := m.mapping(hardwareRequest{Operation: "unbind", Revision: first.Mapping.Revision})
+	if unbound.Mapping == nil || unbound.Mapping.Binding != nil || unbound.Mapping.Revision == initialBindingRevision {
+		t.Fatalf("unbind did not persist a new revision: %+v", unbound)
+	}
+	restarted := &hardwareManager{configDir: dir, alias: m.alias, ownedLink: m.ownedLink, inventory: m.inventory}
+	if stale := restarted.mapping(hardwareRequest{Operation: "bind", Revision: initialBindingRevision, Candidate: c.ID}); stale.Code != 409 {
+		t.Fatalf("stale bind accepted after daemon restart: %+v", stale)
 	}
 }

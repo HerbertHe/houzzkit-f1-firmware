@@ -46,7 +46,7 @@ func (h webHandler) hardware(w http.ResponseWriter, r *http.Request, operation s
 		}
 		bind := request.Operation == "bind" && candidateID.MatchString(request.Candidate)
 		unbind := request.Operation == "unbind" && request.Candidate == ""
-		if !bind && !unbind {
+		if (!bind && !unbind) || !bindingRevisionPattern.MatchString(request.Revision) {
 			writeResult(w, result{Code: 400, Error: "无效的设备绑定操作。"})
 			return
 		}

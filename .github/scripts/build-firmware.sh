@@ -12,6 +12,7 @@ ubuntu_defconfig=$defconfig
 rootfs_image="$sdk/rootfs/ubuntu-rootfs.img"
 
 chip="$sdk/device/rockchip/.chips/rk3566_rk3568"
+partition_template="$chip/parameter-ubuntu-fit.txt"
 images="$sdk/device/rockchip/common/images"
 toolchain="$sdk/prebuilts/gcc/linux-x86/aarch64/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc"
 pack_dir="$sdk/tools/linux/Linux_Pack_Firmware/rockdev"
@@ -46,7 +47,7 @@ prepare_pack_tools() (
 
 # Check this board's static inputs before changing rootfs permissions or compiling.
 for input in \
-  "$chip/$defconfig" "$chip/parameter-ubuntu-fit.txt" "$chip/boot4recovery.its" \
+  "$chip/$defconfig" "$partition_template" "$chip/boot4recovery.its" \
   "$images/rk356x-recovery-arm64.cpio.gz" "$images/wipe_all-misc.img" \
   "$sdk/kernel/arch/arm64/configs/jl_v1_linux_defconfig" \
   "$sdk/kernel/arch/arm64/boot/dts/rockchip/rk3568-jl-rm01.dts" \
@@ -99,14 +100,19 @@ else
   "$sdk/kernel/scripts/config" --file "$kernel_config" -e MEMCG -e SWAP -e ZRAM -e CRYPTO_LZ4 \
     -e DEVTMPFS -e DEVTMPFS_MOUNT
   rootfs_tree="$staging/rootfs"
-  root_partuuid=$(sed -n 's/^uuid:rootfs=//p' "$chip/parameter-ubuntu-fit.txt")
+  root_partuuid=$(sed -n 's/^uuid:rootfs=//p' "$partition_template")
   [[ "$root_partuuid" =~ ^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$ ]] ||
     fail "Invalid rootfs PARTUUID in the F1 partition table"
   bash "$armbian_profile/prepare-rootfs.sh" "$rootfs_tree" "$rootfs/ubuntu-rootfs/usr/lib/firmware" "$root_partuuid"
 
-  # Build the same boot target used by "all" and install its matching modules in /.
-  (cd "$sdk" && ./build.sh "$defconfig" && ./build.sh extboot </dev/null)
-  kernel_release=$(cat "$sdk/kernel/include/config/kernel.release")
+fi
+
+# Capture the version from the same boot target that the BSP packs.
+(cd "$sdk" && ./build.sh "$defconfig" && ./build.sh extboot </dev/null)
+kernel_release=$(cat "$sdk/kernel/include/config/kernel.release")
+[[ "$kernel_release" =~ ^[0-9][A-Za-z0-9._+-]*$ ]] || fail "Invalid BSP kernel release"
+
+if [[ "$flavor" == armbian ]]; then
   modules="$sdk/kernel/extboot/lib/modules/$kernel_release"
   require_file "$modules/modules.order"
   sudo install -d "$rootfs_tree/usr/lib/modules/$kernel_release"
@@ -127,10 +133,18 @@ case "$flavor" in
     ;;
 esac
 if [[ -n ${FIRMWARE_VERSION:-} ]]; then
+  build_run_id=${GITHUB_RUN_ID:?GitHub Actions run ID is required for firmware metadata}
+  [[ "$build_run_id" =~ ^[0-9]+$ ]] || fail "Invalid GitHub Actions run ID"
+  read -r partition_template_sha256 _ < <(sha256sum "$partition_template")
+  [[ "$partition_template_sha256" =~ ^[a-f0-9]{64}$ ]] || fail "Invalid partition template checksum"
   jq -n --arg version "$FIRMWARE_VERSION" --arg flavor "$flavor" \
     --arg distribution_version "$distro_version" --arg source_commit "$(git rev-parse HEAD)" \
+    --arg build_run_id "$build_run_id" --arg kernel_release "$kernel_release" \
+    --arg partition_template_sha256 "$partition_template_sha256" \
     '{version: $version, flavor: $flavor, distribution_version: $distribution_version,
-      source_commit: $source_commit, board: "houzzkit-force1"}' > "$RUNNER_TEMP/houzzkit-firmware.json"
+      source_commit: $source_commit, board: "houzzkit-force1", build_run_id: $build_run_id,
+      kernel_release: $kernel_release, partition_layout_id: "rockchip-gpt-single-rootfs-v1",
+      partition_template_sha256: $partition_template_sha256}' > "$RUNNER_TEMP/houzzkit-firmware.json"
   sudo install -m 0644 "$RUNNER_TEMP/houzzkit-firmware.json" "$rootfs_tree/etc/houzzkit-firmware.json"
 fi
 
@@ -148,10 +162,8 @@ e2fsck -fn "$rootfs_image"
   cd "$sdk"
   ./build.sh "$defconfig"
   ./build.sh all </dev/null
-  if [[ "$flavor" == armbian ]]; then
-    [[ "$(cat kernel/include/config/kernel.release)" == "$kernel_release" ]] ||
-      fail "Packaged kernel release differs from the modules installed in Armbian"
-  fi
+  [[ "$(cat kernel/include/config/kernel.release)" == "$kernel_release" ]] ||
+    fail "Packaged kernel release differs from the prebuilt boot target"
 
   manifest=output/update/Image/package-file
   require_file "$manifest"

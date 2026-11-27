@@ -70,9 +70,17 @@ jobs:
             fi
             [[ "$draft" == true ]]
           fi
-          distro=$(jq -er --arg tag "$tag" --arg sha "$SOURCE_SHA" --arg flavor "$flavor" \
-            'select(.version == $tag and .source_commit == $sha and .flavor == $flavor and .board == "houzzkit-force1") |
-             .distribution_version | select(type == "string" and test("^[0-9A-Za-z._-]+$"))' houzzkit-firmware.json)
+          metadata=$(jq -er --arg tag "$tag" --arg sha "$SOURCE_SHA" --arg flavor "$flavor" \
+            --arg run "$GITHUB_RUN_ID" '
+              select(.version == $tag and .source_commit == $sha and .flavor == $flavor and
+                .board == "houzzkit-force1" and .build_run_id == $run and
+                .partition_layout_id == "rockchip-gpt-single-rootfs-v1" and
+                (.partition_template_sha256 | test("^[a-f0-9]{64}$")) and
+                (.distribution_version | test("^[0-9A-Za-z._-]+$")) and
+                (.kernel_release | test("^[0-9][A-Za-z0-9._+-]*$"))) |
+              [.distribution_version, .kernel_release, .partition_layout_id] | @tsv
+            ' houzzkit-firmware.json)
+          IFS=$'\t' read -r distro kernel_release layout <<< "$metadata"
           release_options=(--latest)
           draft_options=()
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
@@ -84,6 +92,8 @@ jobs:
           notes=$(mktemp)
           {
             printf 'Distribution: %s %s\n\n' "$flavor" "$distro"
+            printf 'BSP kernel: `%s`\n\n' "$kernel_release"
+            printf 'Partition layout: `%s`\n\n' "$layout"
             printf 'Source commit: `%s`\n\n' "$SOURCE_SHA"
             printf 'Build: %s/%s/actions/runs/%s\n\n' "$GITHUB_SERVER_URL" "$GH_REPO" "$GITHUB_RUN_ID"
             if [[ -n "$PR_NUMBER" ]]; then

@@ -146,6 +146,9 @@ HTTP 80 会跳转到 HTTPS 443，密码仅通过 HTTPS 提交。首启页面只�
 - 推送到 `main` 或更新目标为 `main` 的 PR 时，某发行版的 rootfs、构建脚本或专属工作流改动触发对应构建。共享 BSP、htool 和共享工作流改动触发两种构建。只改根 README、`docs/` 或版权文件会跳过，`main` 也可手动触发。
 - `main` 构建成功后发布正式版，同仓库 PR 发布预发行版，Fork PR 可下载 Actions 构建产物。两种固件分别按工作流启动时的北京时间编号，同仓库 PR 和正式版共用当日序号。重跑同一工作流沿用原编号，镜像内的 `/etc/houzzkit-firmware.json` 与 Release 中的版本记录一致。历史版本仍可按原名称下载。以 Armbian 为例，当天第一个是 `houzzkit-firmware-armbian-2026_11_26`，第二个加 `_1`。
 
+- 镜像版本记录包含 GitHub Actions 运行编号、实际打包的 BSP 内核版本、分区布局标识和分区模板的 SHA-256。当前布局标识为 `rockchip-gpt-single-rootfs-v1`。打包按镜像大小调整分区时，模板校验值仍标识构建输入。
+- Ubuntu 和 Armbian 都发布正式版。后续工作台按设备当前发行版筛选正式更新，并按签名清单里的版本顺序比较。GitHub 的 Latest 标记适用于整个仓库，不能作为某一发行版的更新依据。
+
 ## APT 软件源
 
 两种镜像默认使用清华 TUNA 的 Ubuntu Ports 源，Armbian 另使用 TUNA 的 Armbian 仓库。镜像保留发行版软件包签名校验。F1 的内核、DTB 和 U-Boot 随固件更新，APT 配置阻止通用启动包替换它们，普通系统包仍可更新。

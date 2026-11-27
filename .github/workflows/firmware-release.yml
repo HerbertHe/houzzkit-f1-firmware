@@ -6,7 +6,7 @@ on:
       source_sha:
         required: true
         type: string
-      firmware_prefix:
+      firmware_version:
         required: true
         type: string
       artifact_name:
@@ -34,9 +34,8 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
       SOURCE_SHA: ${{ inputs.source_sha }}
-      FIRMWARE_PREFIX: ${{ inputs.firmware_prefix }}
+      FIRMWARE_VERSION: ${{ inputs.firmware_version }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      TZ: Asia/Shanghai
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -48,33 +47,43 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          [[ "$FIRMWARE_PREFIX" =~ ^houzzkit-firmware-(ubuntu|armbian)_[0-9][0-9._a-zA-Z-]*$ ]]
-          base="$FIRMWARE_PREFIX-$(date +%Y_%m_%d)"
-          release_options=(--latest)
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            release_options=(--prerelease --latest=false)
-          fi
+          tag="$FIRMWARE_VERSION"
+          [[ "$tag" =~ ^houzzkit-firmware-(ubuntu|armbian)-[0-9]{4}_[0-9]{2}_[0-9]{2}(_[1-9][0-9]*)?$ ]]
+          flavor=${BASH_REMATCH[1]}
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          owner="Firmware build run $GITHUB_RUN_ID"
+          object=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq 'select(.object.type == "tag") | .object.sha')
+          [[ -n "$object" ]]
+          gh api "repos/$GH_REPO/git/tags/$object" |
+            jq -e --arg owner "$owner" --arg sha "$SOURCE_SHA" \
+              '.message == $owner and .object.type == "commit" and .object.sha == $sha' >/dev/null
 
-          # The create-ref API reserves a unique name even when builds finish together.
-          # Both stable releases and PR prereleases use the same daily sequence.
-          for ((number = 0; ; number++)); do
-            tag="$base"
-            if ((number > 0)); then
-              tag="${base}_${number}"
+          # Authenticated release listing includes drafts, unlike lookup by published tag.
+          existing=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$tag\") | [.id, .draft] | @tsv")
+          if [[ -n "$existing" ]]; then
+            IFS=$'\t' read -r release_id draft <<< "$existing"
+            [[ "$release_id" =~ ^[0-9]+$ ]]
+            if [[ "$draft" == false ]]; then
+              printf 'Release %s was already published.\n' "$tag"
+              exit 0
             fi
-            if response=$(gh api "repos/$GH_REPO/git/refs" \
-              -f "ref=refs/tags/$tag" -f "sha=$SOURCE_SHA" 2>&1); then
-              break
-            fi
-            if ! gh api "repos/$GH_REPO/git/ref/tags/$tag" --silent; then
-              printf '%s\n' "$response" >&2
-              exit 1
-            fi
-          done
+            [[ "$draft" == true ]]
+          fi
+          distro=$(jq -er --arg tag "$tag" --arg sha "$SOURCE_SHA" --arg flavor "$flavor" \
+            'select(.version == $tag and .source_commit == $sha and .flavor == $flavor and .board == "houzzkit-force1") |
+             .distribution_version | select(type == "string" and test("^[0-9A-Za-z._-]+$"))' houzzkit-firmware.json)
+          release_options=(--latest)
+          draft_options=()
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            release_options=(--latest=false)
+            draft_options=(--prerelease)
+          fi
 
           image="$tag.img.zst"
           notes=$(mktemp)
           {
+            printf 'Distribution: %s %s\n\n' "$flavor" "$distro"
             printf 'Source commit: `%s`\n\n' "$SOURCE_SHA"
             printf 'Build: %s/%s/actions/runs/%s\n\n' "$GITHUB_SERVER_URL" "$GH_REPO" "$GITHUB_RUN_ID"
             if [[ -n "$PR_NUMBER" ]]; then
@@ -91,5 +100,17 @@ jobs:
           printf 'Verify the downloads with `sha256sum -c %s.sha256`.\n\n' "$tag" >> "$notes"
           printf 'Unpack the flashable image with `zstd -d %s`.\n' "$image" >> "$notes"
           sha256sum "${assets[@]}" > "$tag.sha256"
-          gh release create "$tag" "${assets[@]}" "$tag.sha256" \
-            --verify-tag --title "$tag" --notes-file "$notes" "${release_options[@]}"
+          if [[ -n "$existing" ]]; then
+            # A rebuild can change the bytes or number of parts. Only reset our draft.
+            previous=$(gh api --paginate "repos/$GH_REPO/releases/$release_id/assets?per_page=100" --jq '.[].id')
+            while IFS= read -r asset_id; do
+              [[ -n "$asset_id" ]] || continue
+              gh api --method DELETE "repos/$GH_REPO/releases/assets/$asset_id" --silent
+            done <<< "$previous"
+          else
+            gh release create "$tag" --draft --verify-tag --title "$tag" \
+              --notes-file "$notes" "${draft_options[@]}"
+          fi
+          mv houzzkit-firmware.json "$tag.json"
+          gh release upload "$tag" "${assets[@]}" "$tag.sha256" "$tag.json"
+          gh release edit "$tag" --draft=false --verify-tag --notes-file "$notes" "${release_options[@]}"

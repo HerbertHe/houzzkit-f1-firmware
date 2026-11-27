@@ -5,7 +5,7 @@ set -euo pipefail
 flavor=${1:-ubuntu}
 sdk="$PWD/houzzkit-f1-bsp-k6199"
 armbian_profile="$PWD/houzzkit-f1-rootfs-armbian"
-rootfs="$PWD/houzzkit-f1-rootfs-u2404"
+rootfs="$PWD/houzzkit-f1-rootfs-ubuntu"
 restore_script="$PWD/.github/scripts/restore-rootfs.py"
 defconfig=szzn_rk3568_jl-rzw-v1_ubuntu-lite-2404_defconfig
 ubuntu_defconfig=$defconfig
@@ -115,6 +115,23 @@ else
   for feature in MEMCG SWAP ZRAM CRYPTO_LZ4; do
     grep -qx "CONFIG_$feature=y" "$sdk/kernel/.config" || fail "Missing Armbian kernel feature: $feature"
   done
+fi
+
+sudo bash "$PWD/.github/scripts/configure-apt-sources.sh" "$rootfs_tree" "$flavor"
+
+case "$flavor" in
+  ubuntu) distro_version=24.04 ;;
+  armbian)
+    source "$armbian_profile/version.env"
+    distro_version=$ARMBIAN_VERSION
+    ;;
+esac
+if [[ -n ${FIRMWARE_VERSION:-} ]]; then
+  jq -n --arg version "$FIRMWARE_VERSION" --arg flavor "$flavor" \
+    --arg distribution_version "$distro_version" --arg source_commit "$(git rev-parse HEAD)" \
+    '{version: $version, flavor: $flavor, distribution_version: $distribution_version,
+      source_commit: $source_commit, board: "houzzkit-force1"}' > "$RUNNER_TEMP/houzzkit-firmware.json"
+  sudo install -m 0644 "$RUNNER_TEMP/houzzkit-firmware.json" "$rootfs_tree/etc/houzzkit-firmware.json"
 fi
 
 require_file "$RUNNER_TEMP/htool-arm64"

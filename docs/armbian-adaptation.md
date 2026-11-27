@@ -101,7 +101,7 @@ Docker `data-root` 只影响引擎自身的数据。使用 containerd image stor
 
 ## 6. CI、发布与验收
 
-Armbian 使用独立 Linux 工作流，固定构建输入，PR 产生测试产物，`main` 构建候选镜像，通过真机验收后再标为稳定版。交付物包括 F1 专用 Rockchip USB 直刷整包、SHA-256、构建版本清单、刷写说明和 Compose 版本。Armbian 镜像使用例如 `houzzkit-firmware-armbian_26.11.0-trunk.140-YYYY_MM_DD.img.zst` 的独立名称。Linux、DTB、U-Boot 和模块升级要作为配套版本验证，保留原厂恢复路径。所用第三方软件包含的许可与源码提供义务，按组件单独核对。
+Armbian 使用独立 Linux 工作流，固定构建输入，PR 产生测试产物，`main` 构建候选镜像，通过真机验收后再标为稳定版。交付物包括 F1 专用 Rockchip USB 直刷整包、SHA-256、构建版本清单、刷写说明和 Compose 版本。Armbian 镜像使用例如 `houzzkit-firmware-armbian-YYYY_MM_DD.img.zst` 的独立名称。Linux、DTB、U-Boot 和模块升级要作为配套版本验证，保留原厂恢复路径。所用第三方软件包含的许可与源码提供义务，按组件单独核对。
 
 | 顺序 | 操作 | 判定 |
 | --- | --- | --- |

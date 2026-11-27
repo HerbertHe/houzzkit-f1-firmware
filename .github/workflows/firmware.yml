@@ -5,9 +5,11 @@ on:
     branches: [main]
     paths:
       - 'houzzkit-f1-bsp-k6199/**'
-      - 'houzzkit-f1-rootfs-u2404/**'
+      - 'houzzkit-f1-rootfs-ubuntu/**'
       - 'htool/**'
       - '.github/scripts/build-firmware.sh'
+      - '.github/scripts/configure-apt-sources.sh'
+      - '.github/workflows/firmware-version.yml'
       - '.github/scripts/restore-rootfs.py'
       - '.github/workflows/firmware.yml'
       - '.github/workflows/firmware-build.yml'
@@ -17,9 +19,11 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'houzzkit-f1-bsp-k6199/**'
-      - 'houzzkit-f1-rootfs-u2404/**'
+      - 'houzzkit-f1-rootfs-ubuntu/**'
       - 'htool/**'
       - '.github/scripts/build-firmware.sh'
+      - '.github/scripts/configure-apt-sources.sh'
+      - '.github/workflows/firmware-version.yml'
       - '.github/scripts/restore-rootfs.py'
       - '.github/workflows/firmware.yml'
       - '.github/workflows/firmware-build.yml'
@@ -34,18 +38,30 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  version:
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/firmware-version.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      flavor: ubuntu
+
+  build:
+    needs: version
     uses: ./.github/workflows/firmware-build.yml
     with:
       source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      flavor: ubuntu
+      firmware_version: ${{ needs.version.outputs.version }}
 
   release:
-    needs: build
+    needs: [version, build]
     permissions:
       contents: write
     uses: ./.github/workflows/firmware-release.yml
     with:
       source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
-      firmware_prefix: ${{ needs.build.outputs.firmware_prefix }}
+      firmware_version: ${{ needs.version.outputs.version }}
       artifact_name: houzzkit-firmware-ubuntu

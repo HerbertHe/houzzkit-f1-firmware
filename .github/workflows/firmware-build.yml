@@ -10,9 +10,9 @@ on:
       flavor:
         default: ubuntu
         type: string
-    outputs:
-      firmware_prefix:
-        value: ${{ jobs.build.outputs.firmware_prefix }}
+      firmware_version:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,8 +25,6 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 240
-    outputs:
-      firmware_prefix: ${{ steps.variant.outputs.firmware_prefix }}
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
     steps:
@@ -57,21 +55,6 @@ jobs:
           go test -race ./...
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/htool-arm64" .
 
-      - name: Resolve firmware variant
-        id: variant
-        env:
-          FLAVOR: ${{ inputs.flavor }}
-        run: |
-          case "$FLAVOR" in
-            ubuntu) prefix=houzzkit-firmware-ubuntu_24_04 ;;
-            armbian)
-              source houzzkit-f1-rootfs-armbian/version.env
-              prefix="houzzkit-firmware-armbian_$ARMBIAN_VERSION"
-              ;;
-            *) exit 1 ;;
-          esac
-          printf 'firmware_prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
-
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -86,13 +69,17 @@ jobs:
       - name: Build and compress the flash image
         env:
           FLAVOR: ${{ inputs.flavor }}
+          FIRMWARE_VERSION: ${{ inputs.firmware_version }}
         run: bash .github/scripts/build-firmware.sh "$FLAVOR"
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: houzzkit-firmware-${{ inputs.flavor }}
-          path: ${{ runner.temp }}/houzzkit-firmware.img.zst
+          path: |
+            ${{ runner.temp }}/houzzkit-firmware.img.zst
+            ${{ runner.temp }}/houzzkit-firmware.json
+          overwrite: true
           if-no-files-found: error
           compression-level: 0
           retention-days: 7

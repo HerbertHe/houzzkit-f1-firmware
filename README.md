@@ -10,7 +10,7 @@
 | 路径 | 用途 |
 | --- | --- |
 | [houzzkit-f1-bsp-k6199](houzzkit-f1-bsp-k6199) | Rockchip BSP、U-Boot、Linux 6.1 内核、F1 设备树及刷机工具 |
-| [houzzkit-f1-rootfs-u2404](houzzkit-f1-rootfs-u2404) | Ubuntu 根文件系统快照、元数据和镜像生成脚本 |
+| [houzzkit-f1-rootfs-ubuntu](houzzkit-f1-rootfs-ubuntu) | Ubuntu 根文件系统快照、元数据和镜像生成脚本 |
 | [Ubuntu 工作流](.github/workflows/firmware.yml) | 构建 Ubuntu 24.04 固件 |
 | [Armbian 工作流](.github/workflows/firmware-armbian.yml) | 构建 Armbian Noble 固件 |
 | [Armbian 根文件系统适配](houzzkit-f1-rootfs-armbian) | 固定上游版本、配置板级用户态和首次启动 |
@@ -20,10 +20,10 @@
 
 | 文件 | 使用方法 |
 | --- | --- |
-| `houzzkit-firmware-ubuntu_24_04-YYYY_MM_DD[_N].img.zst` | 解压为 `.img` 后使用 Windows RKDevTool 或 macOS RKDevTool 图形界面的整包升级功能 |
+| `houzzkit-firmware-ubuntu-YYYY_MM_DD[_N].img.zst` | 解压为 `.img` 后使用 Windows RKDevTool 或 macOS RKDevTool 图形界面的整包升级功能 |
 | 同名 `.img.zst.part-000`、`.part-001` 等 | 核验每个分卷，按编号合并，再解压 |
 | 单独的 `rootfs.img`、`boot.img`、`recovery.img` | BSP 分区镜像，仅用于有对应分区写入说明的维护流程 |
-| `houzzkit-firmware-armbian_<版本>-YYYY_MM_DD[_N].img.zst` | 使用同一 USB OTG 整包方式直刷 eMMC。选取已完成真机验证的 F1 Release。 |
+| `houzzkit-firmware-armbian-YYYY_MM_DD[_N].img.zst` | 使用同一 USB OTG 整包方式直刷 eMMC。选取已完成真机验证的 F1 Release。 |
 
 两种固件的 Release 解压后得到的是 **Rockchip 整包**。不要用 `dd`、磁盘镜像写入器或 `rkdeveloptool wl 0` 将这个文件写入 eMMC。
 
@@ -43,7 +43,7 @@
 在由下载文件组成的目录中打开 PowerShell，把示例名称替换成实际 Release 的完整名称。下面的脚本会先核验校验文件中列出的每个资产，再按编号合并分卷并解压。已有同名结果时请先移走旧文件。
 
 ```powershell
-$base = 'houzzkit-firmware-ubuntu_24_04-2026_11_26'
+$base = 'houzzkit-firmware-ubuntu-2026_11_26'
 $archive = "$base.img.zst"
 $zstd = if (Test-Path -LiteralPath '.\zstd.exe') { '.\zstd.exe' } else { 'zstd.exe' }
 $ErrorActionPreference = 'Stop'
@@ -79,7 +79,7 @@ if ($LASTEXITCODE -ne 0) { throw '固件解压失败' }
 ```
 
 1. 打开 `RKDevTool.exe`，按上面的步骤将 F1 切到刷机模式。状态栏应显示已发现一个 LOADER 或 MASKROM 设备。若没有识别，在设备管理器确认设备使用 RockUSB 驱动，然后重新连接。
-2. 切到 **升级固件（Upgrade Firmware）** 页，点击 **固件（Firmware）**，选择解压后的 `.img`。原版教程中的 `FULL` 是原厂文件名标识。本仓库的 `houzzkit-firmware-ubuntu_24_04-….img` 已是整包，可以直接选中。
+2. 切到 **升级固件（Upgrade Firmware）** 页，点击 **固件（Firmware）**，选择解压后的 `.img`。原版教程中的 `FULL` 是原厂文件名标识。本仓库的 `houzzkit-firmware-ubuntu-….img` 已是整包，可以直接选中。
 3. 等待固件信息显示后点击 **升级（Upgrade）**。以工具日志报告完成为准，等待设备自动重启。
 
 ## macOS 刷机
@@ -93,7 +93,7 @@ brew install zstd
 在下载目录中核验并解压，先把 `base` 改成实际 Release 名。
 
 ```sh
-base='houzzkit-firmware-ubuntu_24_04-2026_11_26'
+base='houzzkit-firmware-ubuntu-2026_11_26'
 shasum -a 256 -c "$base.sha256"
 ```
 
@@ -144,7 +144,13 @@ HTTP 80 会跳转到 HTTPS 443，密码仅通过 HTTPS 提交。首启页面只�
 - **Ubuntu** 使用仓库中的 Ubuntu 24.04 ARM64 根文件树。**Armbian** 则由固定版本的官方 Build Framework 生成 Noble ARM64 Minimal 用户态，然后加入 F1 的固件文件、首启配置和相匹配的 BSP 内核模块。
 - 共享构建使用 F1 BSP 生成 boot、Recovery、U-Boot、分区表和 Rockchip `update.img`。两种固件共享包清单、镜像头、压缩校验和发布逻辑。
 - 推送到 `main` 或更新目标为 `main` 的 PR 时，某发行版的 rootfs、构建脚本或专属工作流改动触发对应构建。共享 BSP、htool 和共享工作流改动触发两种构建。只改根 README、`docs/` 或版权文件会跳过，`main` 也可手动触发。
-- `main` 构建成功后发布正式版，同仓库 PR 发布预发行版，Fork PR 可下载 Actions 构建产物。两种固件分别按北京时间编号。以 Armbian 为例，当天第一个是 `houzzkit-firmware-armbian_26.11.0-trunk.140-2026_11_26`，第二个加 `_1`。
+- `main` 构建成功后发布正式版，同仓库 PR 发布预发行版，Fork PR 可下载 Actions 构建产物。两种固件分别按工作流启动时的北京时间编号，同仓库 PR 和正式版共用当日序号。重跑同一工作流沿用原编号，镜像内的 `/etc/houzzkit-firmware.json` 与 Release 中的版本记录一致。历史版本仍可按原名称下载。以 Armbian 为例，当天第一个是 `houzzkit-firmware-armbian-2026_11_26`，第二个加 `_1`。
+
+## APT 软件源
+
+两种镜像默认使用清华 TUNA 的 Ubuntu Ports 源，Armbian 另使用 TUNA 的 Armbian 仓库。镜像保留发行版软件包签名校验。F1 的内核、DTB 和 U-Boot 随固件更新，APT 配置阻止通用启动包替换它们，普通系统包仍可更新。
+
+如果需要直接从 Ubuntu 官方接收安全更新，编辑 `/etc/apt/sources.list.d/ubuntu.sources`，只将 `Suites: noble-security` 所在段落的 `URIs` 改为 `https://ports.ubuntu.com/ubuntu-ports/`，再运行 `sudo apt update`。
 
 ## 许可证
 

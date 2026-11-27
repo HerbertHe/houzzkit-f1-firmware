@@ -1,0 +1,85 @@
+name: Reserve firmware version
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      flavor:
+        required: true
+        type: string
+    outputs:
+      version:
+        value: ${{ jobs.reserve.outputs.version }}
+
+jobs:
+  reserve:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          FLAVOR: ${{ inputs.flavor }}
+          CAN_PUBLISH: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
+          TZ: Asia/Shanghai
+        run: |
+          [[ "$FLAVOR" == ubuntu || "$FLAVOR" == armbian ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          prefix="houzzkit-firmware-$FLAVOR"
+          if [[ "$CAN_PUBLISH" != true ]]; then
+            printf 'version=%s-preview-%s\n' "$prefix" "$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The original run's creation time stays fixed across retries.
+          created=$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+          [[ "$created" == *T*Z ]]
+          base="$prefix-$(date -d "$created" +%Y_%m_%d)"
+          owner="Firmware build run $GITHUB_RUN_ID"
+
+          # Annotated tags tie the reservation to a run, even before a Release exists.
+          for ((number = 0; ; number++)); do
+            tag="$base"
+            if ((number > 0)); then
+              tag="${base}_${number}"
+            fi
+            existing=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" \
+              --jq ".[] | select(.ref == \"refs/tags/$tag\") | [.object.type, .object.sha] | @tsv")
+            if [[ -z "$existing" ]]; then
+              object=$(gh api "repos/$GH_REPO/git/tags" --method POST \
+                -f "tag=$tag" -f "message=$owner" -f "object=$SOURCE_SHA" -f type=commit \
+                -f "tagger[name]=github-actions[bot]" \
+                -f "tagger[email]=41898282+github-actions[bot]@users.noreply.github.com" \
+                -f "tagger[date]=$created" \
+                --jq .sha)
+              if response=$(gh api "repos/$GH_REPO/git/refs" --method POST \
+                -f "ref=refs/tags/$tag" -f "sha=$object" 2>&1); then
+                break
+              fi
+              if ! existing=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" \
+                --jq '[.object.type, .object.sha] | @tsv'); then
+                printf '%s\n' "$response" >&2
+                exit 1
+              fi
+            fi
+            IFS=$'\t' read -r kind object <<< "$existing"
+            if [[ "$kind" == tag ]]; then
+              annotation=$(gh api "repos/$GH_REPO/git/tags/$object")
+              if jq -e --arg owner "$owner" --arg sha "$SOURCE_SHA" \
+                '.message == $owner and .object.type == "commit" and .object.sha == $sha' \
+                <<< "$annotation" >/dev/null; then
+                break
+              fi
+            fi
+          done
+          printf 'version=%s\n' "$tag" >> "$GITHUB_OUTPUT"

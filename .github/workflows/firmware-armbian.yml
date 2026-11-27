@@ -6,9 +6,11 @@ on:
     paths:
       - 'houzzkit-f1-bsp-k6199/**'
       - 'houzzkit-f1-rootfs-armbian/**'
-      - 'houzzkit-f1-rootfs-u2404/ubuntu-rootfs/usr/lib/firmware/**'
+      - 'houzzkit-f1-rootfs-ubuntu/ubuntu-rootfs/usr/lib/firmware/**'
       - 'htool/**'
       - '.github/scripts/build-firmware.sh'
+      - '.github/scripts/configure-apt-sources.sh'
+      - '.github/workflows/firmware-version.yml'
       - '.github/workflows/firmware-armbian.yml'
       - '.github/workflows/firmware-build.yml'
       - '.github/workflows/firmware-release.yml'
@@ -18,9 +20,11 @@ on:
     paths:
       - 'houzzkit-f1-bsp-k6199/**'
       - 'houzzkit-f1-rootfs-armbian/**'
-      - 'houzzkit-f1-rootfs-u2404/ubuntu-rootfs/usr/lib/firmware/**'
+      - 'houzzkit-f1-rootfs-ubuntu/ubuntu-rootfs/usr/lib/firmware/**'
       - 'htool/**'
       - '.github/scripts/build-firmware.sh'
+      - '.github/scripts/configure-apt-sources.sh'
+      - '.github/workflows/firmware-version.yml'
       - '.github/workflows/firmware-armbian.yml'
       - '.github/workflows/firmware-build.yml'
       - '.github/workflows/firmware-release.yml'
@@ -34,19 +38,30 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  version:
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/firmware-build.yml
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/firmware-version.yml
     with:
       source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
       flavor: armbian
 
+  build:
+    needs: version
+    uses: ./.github/workflows/firmware-build.yml
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      flavor: armbian
+      firmware_version: ${{ needs.version.outputs.version }}
+
   release:
-    needs: build
+    needs: [version, build]
     permissions:
       contents: write
     uses: ./.github/workflows/firmware-release.yml
     with:
       source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
-      firmware_prefix: ${{ needs.build.outputs.firmware_prefix }}
+      firmware_version: ${{ needs.version.outputs.version }}
       artifact_name: houzzkit-firmware-armbian

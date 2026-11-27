@@ -150,13 +150,19 @@ func (m *hardwareManager) reconcile(binding *deviceIdentity, candidates []serial
 	case len(matches) == 0:
 		status.State = "missing"
 		err = m.removeAlias()
-	case len(matches) != 1 || !matches[0].Available:
+	case len(matches) != 1:
 		status.State = "conflict"
+		err = m.removeAlias()
+	case matches[0].awaitingPath:
+		status.State = "waiting"
+		err = m.removeAlias()
+	case !matches[0].Available:
+		status.State = "blocked"
 		err = m.removeAlias()
 	default:
 		target := matches[0].target()
 		if target == "" {
-			status.State = "missing"
+			status.State = "waiting"
 			err = m.removeAlias()
 		} else {
 			status.State, status.Device = "connected", matches[0].Path
@@ -182,6 +188,9 @@ func (m *hardwareManager) mapping(request hardwareRequest) hardwareReply {
 		_ = m.removeAlias()
 		return hardwareError(503, "无法读取串口设备。")
 	}
+	if err := m.recoverPending(old, candidates); err != nil {
+		return hardwareError(503, "上次绑定操作未能恢复，请检查固定设备路径。")
+	}
 	if request.Operation == "mapping" {
 		status, _ := m.reconcile(old, candidates)
 		return hardwareReply{Mapping: &status}
@@ -200,24 +209,69 @@ func (m *hardwareManager) mapping(request hardwareRequest) hardwareReply {
 		}
 	}
 	path := filepath.Join(m.configDir, "zigbee.json")
-	if err := writeBinding(path, replacement); err != nil {
-		// Atomic rename can succeed before the directory sync fails.
-		m.restoreBinding(path, old, candidates)
-		return hardwareError(503, "无法保存设备绑定。")
+	pending := m.pendingPath()
+	if err := saveHardwareState(pending, struct {
+		Target *deviceIdentity `json:"target"`
+	}{replacement}); err != nil {
+		return hardwareError(503, "无法保存待提交的设备绑定。")
 	}
-	// Re-read the inventory after persisting the selection so an unplugged
-	// device or identity collision cannot silently become a new binding.
-	current, scanErr := m.inventory()
-	if scanErr != nil {
-		m.restoreBinding(path, old, nil)
+
+	current, err := m.inventory()
+	if err != nil {
+		m.abortPending(old, nil)
 		return hardwareError(503, "无法重新确认设备状态。")
+	}
+	if replacement != nil {
+		matches := matchesIdentity(current, replacement)
+		if len(matches) != 1 || matches[0].ID != request.Candidate {
+			m.abortPending(old, current)
+			return hardwareError(409, "设备已变化，请刷新列表后重新选择。")
+		}
 	}
 	status, err := m.reconcile(replacement, current)
 	if err != nil || (replacement != nil && status.State != "connected") {
-		m.restoreBinding(path, old, current)
-		return hardwareError(409, "无法应用新的设备绑定，已尝试恢复原绑定。")
+		m.abortPending(old, current)
+		return hardwareError(409, "无法应用新的设备绑定，请刷新列表。")
+	}
+	if err := writeBinding(path, replacement); err != nil {
+		// Atomic rename can succeed before the directory sync fails.
+		if restoreErr := writeBinding(path, old); restoreErr != nil {
+			_ = m.removeAlias()
+			fmt.Fprintf(os.Stderr, "restore coordinator binding: %v\n", restoreErr)
+		} else {
+			m.abortPending(old, current)
+		}
+		return hardwareError(503, "无法提交新的设备绑定，请检查系统日志。")
+	}
+	// The committed file is authoritative if cleanup is interrupted here.
+	if err := writeBinding(pending, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "clear committed coordinator transaction: %v\n", err)
 	}
 	return hardwareReply{Mapping: &status}
+}
+
+func (m *hardwareManager) pendingPath() string {
+	return filepath.Join(m.configDir, "zigbee.pending.json")
+}
+
+func (m *hardwareManager) recoverPending(binding *deviceIdentity, candidates []serialCandidate) error {
+	if _, err := os.Lstat(m.pendingPath()); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	// Never adopt the pending target. Reapply the last durable commit.
+	if _, err := m.reconcile(binding, candidates); err != nil {
+		return err
+	}
+	return writeBinding(m.pendingPath(), nil)
+}
+
+func (m *hardwareManager) abortPending(binding *deviceIdentity, candidates []serialCandidate) {
+	if err := m.recoverPending(binding, candidates); err != nil {
+		_ = m.removeAlias()
+		fmt.Fprintf(os.Stderr, "recover coordinator transaction: %v\n", err)
+	}
 }
 
 func writeBinding(path string, binding *deviceIdentity) error {
@@ -228,15 +282,6 @@ func writeBinding(path string, binding *deviceIdentity) error {
 		return err
 	}
 	return syncDirectory(filepath.Dir(path))
-}
-
-func (m *hardwareManager) restoreBinding(path string, binding *deviceIdentity, candidates []serialCandidate) {
-	if err := writeBinding(path, binding); err != nil {
-		_ = m.removeAlias()
-		fmt.Fprintf(os.Stderr, "restore coordinator binding: %v\n", err)
-		return
-	}
-	_, _ = m.reconcile(binding, candidates)
 }
 
 func runHardware(listener net.Listener) error {

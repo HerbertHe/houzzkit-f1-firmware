@@ -140,3 +140,69 @@ func TestBootChecksRetrySlowHardware(t *testing.T) {
 		t.Fatal("optional hardware or an unbound coordinator delayed reporting")
 	}
 }
+
+func TestSerialCandidateRejectsStaleAttachment(t *testing.T) {
+	device := deviceIdentity{Kind: "usb", Vendor: "1234", Product: "abcd", Interface: "00", Serial: "original"}
+	path, tty := "/sys/devices/usb1/1-2/ttyUSB0", "/dev/ttyUSB0"
+	original := serialCandidateID(path, tty, "12345", device)
+	if again := serialCandidateID(path, tty, "12345", device); again != original {
+		t.Fatal("same attachment did not keep its candidate ID")
+	}
+	if reattached := serialCandidateID(path, tty, "12346", device); reattached == original {
+		t.Fatal("reattachment reused the old candidate ID")
+	}
+	device.Serial = "replacement"
+	if swapped := serialCandidateID(path, tty, "12345", device); swapped == original {
+		t.Fatal("different device reused the same port and candidate ID")
+	}
+}
+
+func TestRecoverPendingBindingUsesLastDurableCommit(t *testing.T) {
+	for _, committed := range []bool{false, true} {
+		dir := t.TempDir()
+		old := serialCandidate{Path: "/dev/ttyS4", Identity: deviceIdentity{Kind: "uart", Topology: "first"}, Available: true}
+		next := serialCandidate{Path: "/dev/ttyS9", Identity: deviceIdentity{Kind: "uart", Topology: "second"}, Available: true}
+		want := old
+		if committed {
+			want = next
+		}
+		manager := &hardwareManager{
+			configDir: dir, alias: filepath.Join(dir, "alias"), ownedLink: filepath.Join(dir, "coordinator"),
+			inventory: func() ([]serialCandidate, error) { return []serialCandidate{old, next}, nil },
+		}
+		if err := writeBinding(filepath.Join(dir, "zigbee.json"), &want.Identity); err != nil {
+			t.Fatal(err)
+		}
+		if err := saveHardwareState(manager.pendingPath(), map[string]deviceIdentity{"target": next.Identity}); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.enableAlias(next.Path); err != nil {
+			t.Fatal(err)
+		}
+		reply := manager.mapping(hardwareRequest{Operation: "mapping"})
+		if reply.Mapping == nil || reply.Mapping.Device != want.Path {
+			t.Fatalf("committed=%t: restored wrong alias: %+v", committed, reply)
+		}
+		if _, err := os.Lstat(manager.pendingPath()); !os.IsNotExist(err) {
+			t.Fatalf("committed=%t: pending marker not cleaned up: %v", committed, err)
+		}
+		if link, err := os.Readlink(manager.ownedLink); err != nil || link != want.Path {
+			t.Fatalf("committed=%t: restored path %q, error %v", committed, link, err)
+		}
+	}
+}
+
+func TestBootRetryDistinguishesWaitingFromConflict(t *testing.T) {
+	dir := t.TempDir()
+	device := deviceIdentity{Kind: "usb", Serial: "coordinator"}
+	manager := &hardwareManager{alias: filepath.Join(dir, "alias"), ownedLink: filepath.Join(dir, "coordinator")}
+	waiting := serialCandidate{Identity: device, awaitingPath: true}
+	status, err := manager.reconcile(&device, []serialCandidate{waiting})
+	if err != nil || status.State != "waiting" || !checksNeedRetry([]bootCheck{{Name: "Zigbee", State: status.State}}) {
+		t.Fatalf("single unready USB device was not scheduled for retry: %+v, %v", status, err)
+	}
+	status, err = manager.reconcile(&device, []serialCandidate{waiting, waiting})
+	if err != nil || status.State != "conflict" || checksNeedRetry([]bootCheck{{Name: "Zigbee", State: status.State}}) {
+		t.Fatalf("duplicate identity was not distinguished from waiting: %+v, %v", status, err)
+	}
+}

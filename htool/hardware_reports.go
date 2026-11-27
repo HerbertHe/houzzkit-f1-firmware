@@ -98,7 +98,7 @@ func (m *hardwareManager) recordBoot() {
 func checksNeedRetry(checks []bootCheck) bool {
 	for _, check := range checks {
 		switch check.State {
-		case "error", "missing", "partial", "timeout", "unknown":
+		case "error", "missing", "partial", "timeout", "unknown", "waiting":
 			return true
 		case "enumerated":
 			if check.Name == "蓝牙" {
@@ -269,7 +269,11 @@ func (m *hardwareManager) systemChecks() []bootCheck {
 		case "missing":
 			zigbee.Detail = "已绑定设备未连接"
 		case "conflict":
-			zigbee.Detail = "已绑定设备的身份存在冲突或不可用"
+			zigbee.Detail = "多个设备具有相同的绑定身份"
+		case "waiting":
+			zigbee.Detail = "已枚举，正在等待稳定的 USB 设备路径"
+		case "blocked":
+			zigbee.Detail = "已绑定接口当前不可用于协调器"
 		default:
 			zigbee.Detail = "固定设备名应用失败"
 		}

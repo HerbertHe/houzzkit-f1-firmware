@@ -3,7 +3,7 @@
 const hardwareRoute = window.location.pathname;
 const byID = (id) => document.getElementById(id);
 const stateLabels = {
-  unbound: "未绑定", missing: "未连接", conflict: "身份冲突或接口被占用",
+  unbound: "未绑定", missing: "未连接", conflict: "身份冲突", waiting: "等待设备就绪", blocked: "接口当前不可用",
   connected: "宿主机设备已就绪", error: "检查或应用失败", ready: "就绪",
   partial: "部分就绪", enumerated: "已枚举", timeout: "检查超时",
   unknown: "未确认", "optional-absent": "选装设备未检测到",

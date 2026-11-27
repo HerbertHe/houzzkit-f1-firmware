@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,12 +23,13 @@ type deviceIdentity struct {
 }
 
 type serialCandidate struct {
-	ID        string         `json:"id"`
-	Path      string         `json:"path"`
-	Label     string         `json:"label"`
-	Identity  deviceIdentity `json:"identity"`
-	Available bool           `json:"available"`
-	links     []string
+	ID           string         `json:"id"`
+	Path         string         `json:"path"`
+	Label        string         `json:"label"`
+	Identity     deviceIdentity `json:"identity"`
+	Available    bool           `json:"available"`
+	links        []string
+	awaitingPath bool
 }
 
 var serialName = regexp.MustCompile(`^tty(S|USB|ACM)[0-9]+$`)
@@ -52,6 +54,8 @@ func udevTTY(path string) (map[string]string, []string) {
 	}
 	for _, line := range strings.Split(textFile("/run/udev/data/c"+number, 8192), "\n") {
 		switch {
+		case strings.HasPrefix(line, "I:") && len(line) <= 32:
+			properties["USEC_INITIALIZED"] = line[2:]
 		case strings.HasPrefix(line, "E:"):
 			key, value, ok := strings.Cut(line[2:], "=")
 			if ok && len(value) <= 160 {
@@ -114,6 +118,7 @@ func serialInventory() ([]serialCandidate, error) {
 			continue
 		}
 		c := serialCandidate{Path: node, Available: true}
+		var initialized string
 		if strings.HasPrefix(name, "ttyS") {
 			controller, err := filepath.EvalSymlinks(filepath.Join(sys, "device", "of_node"))
 			if err != nil {
@@ -123,6 +128,7 @@ func serialInventory() ([]serialCandidate, error) {
 			c.Label, c.Available = boardSerialLabel(board, controller, name)
 		} else {
 			props, links := udevTTY(sys)
+			initialized = props["USEC_INITIALIZED"]
 			if props["ID_BUS"] != "usb" || props["ID_VENDOR_ID"] == "" || props["ID_MODEL_ID"] == "" {
 				continue
 			}
@@ -144,18 +150,28 @@ func serialInventory() ([]serialCandidate, error) {
 				c.Label = "USB 串口"
 			}
 			c.links = links
-			c.Available = c.Available && c.target() != ""
+			c.awaitingPath = c.Available && c.target() == ""
+			c.Available = c.Available && !c.awaitingPath
 		}
 		for _, console := range consoles {
 			if console == name {
 				c.Available = false
+				c.awaitingPath = false
 				c.Label += " · 系统控制台"
 			}
 		}
-		c.ID = fmt.Sprintf("%x", sha256.Sum256([]byte(hardwarePath+"\x00"+node)))
+		c.ID = serialCandidateID(hardwarePath, node, initialized, c.Identity)
 		candidates = append(candidates, c)
 	}
 	return candidates, nil
+}
+
+// Include stable identity and the udev attachment timestamp so a stale page
+// cannot reselect a different device that inherited the same tty and port.
+func serialCandidateID(hardwarePath, node, initialized string, identity deviceIdentity) string {
+	descriptor, _ := json.Marshal(identity)
+	hash := sha256.Sum256(append([]byte(hardwarePath+"\x00"+node+"\x00"+initialized+"\x00"), descriptor...))
+	return fmt.Sprintf("%x", hash)
 }
 
 func (c serialCandidate) target() string {

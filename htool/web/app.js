@@ -26,6 +26,10 @@ function showStep(target) {
 }
 
 function completed(name) {
+  if (!name) {
+    window.location.replace("/login");
+    return;
+  }
   form.reset();
   message.textContent = "";
   showStep(3);

@@ -4,7 +4,7 @@ Description=Houzzkit first-boot HTTPS redirect
 [Service]
 User=htool
 Group=htool
-ExecStart=/usr/local/bin/htool redirect
+ExecStart=/usr/local/bin/htoold redirect
 UMask=0077
 Restart=on-failure
 RestartSec=3s

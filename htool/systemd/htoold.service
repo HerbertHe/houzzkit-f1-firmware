@@ -1,0 +1,23 @@
+[Unit]
+Description=Houzzkit device workbench
+Requires=htool-account.socket htool-web.socket
+After=htool-account.socket htool-web.socket
+
+[Service]
+Sockets=htool-web.socket
+User=htool
+Group=htool
+ExecStart=/usr/local/bin/htoold web
+StateDirectory=htool-web
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+
+[Install]
+WantedBy=multi-user.target

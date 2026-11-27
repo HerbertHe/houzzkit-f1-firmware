@@ -70,9 +70,10 @@ func redirectHTTPS(w http.ResponseWriter, r *http.Request) {
 
 type accountRequest struct {
 	Setup *setupRequest `json:"setup,omitempty"`
+	Login *string       `json:"login,omitempty"`
 }
 
-func requestAccount(request *setupRequest) result {
+func requestAccount(request accountRequest) result {
 	raw, err := net.DialTimeout("unix", accountSocket, 2*time.Second)
 	if err != nil {
 		return unavailable()
@@ -80,7 +81,7 @@ func requestAccount(request *setupRequest) result {
 	conn := raw.(*net.UnixConn)
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(33 * time.Second))
-	if json.NewEncoder(conn).Encode(accountRequest{Setup: request}) != nil || conn.CloseWrite() != nil {
+	if json.NewEncoder(conn).Encode(request) != nil || conn.CloseWrite() != nil {
 		return unavailable()
 	}
 	var reply result
@@ -91,7 +92,19 @@ func requestAccount(request *setupRequest) result {
 }
 
 type webHandler struct {
-	request func(*setupRequest) result
+	request      func(*setupRequest) result
+	authenticate func(string) result
+	sessions     *sessionStore
+	loginLimiter *loginLimiter
+}
+
+func newWebHandler() *webHandler {
+	return &webHandler{
+		request:      func(request *setupRequest) result { return requestAccount(accountRequest{Setup: request}) },
+		authenticate: func(password string) result { return requestAccount(accountRequest{Login: &password}) },
+		sessions:     &sessionStore{expires: make(map[string]time.Time)},
+		loginLimiter: &loginLimiter{},
+	}
 }
 
 func writeResult(w http.ResponseWriter, reply result) {
@@ -113,47 +126,110 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
-	case "/api/v1/setup":
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", "POST")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	case "/api/v1/setup", "/api/v1/login", "/api/v1/logout":
+		if !allowMethod(w, r, http.MethodPost) {
 			return
 		}
 		origin, https := strings.CutPrefix(r.Header.Get("Origin"), "https://")
 		if !https || requestHost(r, origin) != host {
-			http.Error(w, "invalid origin", http.StatusForbidden)
+			writeResult(w, result{Code: 403, Error: "无法确认请求来源。"})
 			return
 		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			http.Error(w, "expected JSON", http.StatusUnsupportedMediaType)
-			return
+		switch r.URL.Path {
+		case "/api/v1/setup":
+			var request setupRequest
+			if !readJSON(w, r, &request) {
+				return
+			}
+			if !request.valid() {
+				writeResult(w, result{Code: 400, Error: "请检查用户名和两组密码的规则。"})
+				return
+			}
+			reply := h.request(&request)
+			if reply.State == "complete" && reply.Code != 0 {
+				reply.Username = ""
+			}
+			writeResult(w, reply)
+		case "/api/v1/login":
+			h.login(w, r)
+		case "/api/v1/logout":
+			h.logout(w, r)
 		}
-		var request setupRequest
-		if decodeJSON(r.Body, &request) != nil || !request.valid() {
-			writeResult(w, result{Code: 400, Error: "请检查用户名和两组密码的规则。"})
-			return
-		}
-		writeResult(w, h.request(&request))
 	case "/api/v1/setup/status":
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+		if allowMethod(w, r, http.MethodGet) {
+			status := h.request(nil)
+			if status.State == "complete" {
+				status.Username = ""
+			}
+			writeResult(w, status)
 		}
-		writeResult(w, h.request(nil))
-	case "/", "/style.css", "/app.js":
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
+	case "/style.css", "/app.js", "/login.js", "/workspace.js":
+		if allowMethod(w, r, http.MethodGet, http.MethodHead) {
+			http.ServeFileFS(w, r, assets, "web"+r.URL.Path)
 		}
-		path := r.URL.Path
-		if path == "/" {
-			path = "/index.html"
+	case "/", "/welcome", "/login", "/hardware/boot-checks", "/firmware", "/api/v1/workbench":
+		if allowMethod(w, r, http.MethodGet, http.MethodHead) {
+			h.page(w, r)
 		}
-		http.ServeFileFS(w, r, assets, "web"+path)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func allowMethod(w http.ResponseWriter, r *http.Request, methods ...string) bool {
+	for _, method := range methods {
+		if r.Method == method {
+			return true
+		}
+	}
+	w.Header().Set("Allow", strings.Join(methods, ", "))
+	writeResult(w, result{Code: 405, Error: "请求方式不受支持。"})
+	return false
+}
+
+func readJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" {
+		writeResult(w, result{Code: 415, Error: "请求需要使用 JSON。"})
+		return false
+	}
+	if decodeJSON(r.Body, target) != nil {
+		writeResult(w, result{Code: 400, Error: "请求内容无效。"})
+		return false
+	}
+	return true
+}
+
+func (h webHandler) page(w http.ResponseWriter, r *http.Request) {
+	status := h.request(nil)
+	initialized := status.State == "complete" && status.Code == 0
+	ready := status.Code == 0 && (status.State == "ready" || status.State == "pending" || status.State == "running")
+	if !initialized && !ready {
+		writeResult(w, unavailable())
+		return
+	}
+	loggedIn := initialized && h.sessions.valid(r)
+	path := r.URL.Path
+	if path == "/api/v1/workbench" {
+		if !loggedIn {
+			writeResult(w, result{Code: 401, Error: "请以系统管理员身份登录。"})
+			return
+		}
+		writeDeviceInfo(w)
+		return
+	}
+	switch {
+	case !initialized && path != "/welcome":
+		http.Redirect(w, r, "/welcome", http.StatusFound)
+	case !initialized:
+		http.ServeFileFS(w, r, assets, "web/welcome.html")
+	case !loggedIn && path != "/login":
+		http.Redirect(w, r, "/login", http.StatusFound)
+	case !loggedIn:
+		http.ServeFileFS(w, r, assets, "web/login.html")
+	case path == "/welcome" || path == "/login":
+		http.Redirect(w, r, "/", http.StatusFound)
+	default:
+		http.ServeFileFS(w, r, assets, "web/workspace.html")
 	}
 }

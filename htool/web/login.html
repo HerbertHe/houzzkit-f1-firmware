@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · htoold</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/login.js" defer></script>
+</head>
+<body>
+  <div class="device-page auth-page">
+    <header><span class="brand">htoold</span><span class="device">HOUZZkit Force1</span></header>
+    <main>
+      <h1>管理员登录</h1>
+      <p class="note">使用设备的 root 密码进入工作台。</p>
+      <p id="message" role="status"></p>
+      <form id="login" method="post">
+        <label for="admin-password">管理员密码</label>
+        <input id="admin-password" type="password" autocomplete="current-password" required maxlength="512">
+        <footer><button class="primary" type="submit" disabled>登录</button></footer>
+      </form>
+      <noscript><p>请启用 JavaScript 以登录。</p></noscript>
+    </main>
+  </div>
+</body>
+</html>

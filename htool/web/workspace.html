@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工作台 · htoold</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/workspace.js" defer></script>
+</head>
+<body class="workbench">
+  <aside class="sidebar">
+    <a class="brand" href="/">htoold</a>
+    <p class="device">HOUZZkit Force1</p>
+    <nav aria-label="工作台">
+      <a href="/">设备映射</a>
+      <a href="/hardware/boot-checks">启动检查</a>
+      <a href="/firmware">固件更新</a>
+    </nav>
+  </aside>
+  <div class="workbench-content">
+    <header class="topbar">
+      <div><strong id="hostname">HOUZZkit Force1</strong><span id="firmware" class="device"></span></div>
+      <button id="sign-out" type="button">退出登录</button>
+    </header>
+    <main>
+      <p id="message" role="status"></p>
+      <section data-route="/">
+        <h1>设备映射</h1>
+        <article class="account">
+          <h2>Zigbee 协调器</h2>
+          <p class="note">当前固件尚未提供硬件绑定。</p>
+        </article>
+      </section>
+      <section data-route="/hardware/boot-checks" hidden>
+        <h1>启动检查</h1>
+        <article class="account"><p class="note">当前固件尚未记录启动硬件检查。</p></article>
+      </section>
+      <section data-route="/firmware" hidden>
+        <h1>固件更新</h1>
+        <article class="account"><p class="note">当前固件尚未提供在线检查和安装更新。</p></article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

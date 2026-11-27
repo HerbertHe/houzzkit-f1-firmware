@@ -102,7 +102,7 @@ func deviceCertificates(dir string) func(*tls.ClientHelloInfo) (*tls.Certificate
 
 func runWeb(listener net.Listener) error {
 	server := &http.Server{
-		Handler:           webHandler{request: requestAccount},
+		Handler:           newWebHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      40 * time.Second,
@@ -126,6 +126,7 @@ func runAccounts(listener net.Listener) error {
 		accounts:  systemAccounts{},
 		statePath: "/var/lib/htool-account/setup.json",
 		guardPath: "/etc/htool/initialized.json",
+		freshPath: "/etc/htool/uninitialized",
 	}
 	for {
 		conn, err := listener.Accept()
@@ -143,10 +144,15 @@ func runAccounts(listener net.Listener) error {
 				return
 			}
 			var reply result
-			if message.Setup == nil {
-				reply = service.status()
-			} else {
+			switch {
+			case message.Setup != nil && message.Login == nil:
 				reply = service.apply(*message.Setup)
+			case message.Setup == nil && message.Login != nil && validLoginPassword(*message.Login):
+				reply = service.authenticate(*message.Login)
+			case message.Setup == nil && message.Login == nil:
+				reply = service.status()
+			default:
+				reply = result{Code: 400}
 			}
 			_ = json.NewEncoder(conn).Encode(reply)
 		}()
@@ -155,7 +161,7 @@ func runAccounts(listener net.Listener) error {
 
 func main() {
 	if len(os.Args) != 2 {
-		log.Fatal("usage: htool web|redirect|account")
+		log.Fatal("usage: htoold web|redirect|account")
 	}
 	listener, err := activatedListener()
 	if err != nil {
@@ -177,7 +183,7 @@ func main() {
 	case "account":
 		err = runAccounts(listener)
 	default:
-		err = errors.New("usage: htool web|redirect|account")
+		err = errors.New("usage: htoold web|redirect|account")
 	}
 	log.Fatal(err)
 }

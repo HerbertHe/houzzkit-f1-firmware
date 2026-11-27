@@ -129,15 +129,21 @@ sudo ./upgrade_tool uf "$HOME/Downloads/实际固件名称.img"
 
 ### 网页首启
 
-Ubuntu 和 Armbian 共用 [htool](htool) 首启向导，无需接 HDMI。
+Ubuntu 和 Armbian 共用随系统常驻的 [htoold](htool) 工作台和首启向导，无需接 HDMI。
 
 1. 将 F1 靠近 HDMI 的管理口接入可信的局域网，电脑接入同一网络。打开 `https://houzzkit.local`。如果网络不支持 mDNS，可在路由器中查到管理口的 DHCP 地址，再用该 IP 加 `:443` 访问。
 2. 没有 DHCP 时，可网线直连。将电脑的直连网口设为 `192.168.55.2/24`，网关留空，再打开 `https://192.168.55.1:443`。设备生成自签名 HTTPS 证书，在确认设备身份后处理浏览器提示。
-3. 在第一步为 `root` 设置管理员密码，第二步创建普通用户。完成页会给出 SSH 命令。用普通用户的密码登录，需要管理权限时执行 `su -` 并输入管理员密码。
+3. 在第一步为 `root` 设置管理员密码，第二步创建普通用户。完成页会给出 SSH 命令和工作台入口。用普通用户的密码登录，需要管理权限时执行 `su -` 并输入管理员密码。
 
 HTTP 80 会跳转到 HTTPS 443，密码仅通过 HTTPS 提交。首启页面只接受管理口连接，无配对码，首个成功提交创建账号。注册完成后会锁定，重启后继续保持。两种固件均禁止 `root` 直接通过 SSH 登录。 [首启排查与恢复](docs/htool-first-boot.md)
 
 初始化完成后，SSH 可以使用完成页提供的主机名或 IP。运行 `findmnt -no SOURCE,FSTYPE /` 可核对根分区位于 eMMC。Ubuntu 版本读 `/etc/os-release`；Armbian 的版本与板名读 `/etc/armbian-release`。Armbian 的 NVMe 数据迁移与 Compose 部署见 [适配方案](docs/armbian-adaptation.md)。
+
+### htoold 工作台
+
+首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口；本阶段提供页面导航和设备版本信息。
+
+工作台的陶土色配色、侧栏和卡片布局参考了 **7Dollar**。 [itsmaiGe/luci-theme-7dollar](https://github.com/itsmaiGe/luci-theme-7dollar)
 
 ### GitHub Actions
 

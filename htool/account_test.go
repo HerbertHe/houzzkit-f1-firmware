@@ -40,10 +40,27 @@ func (f *fakeAccounts) password(name, value string) error {
 	return nil
 }
 
+func markFresh(t *testing.T, s *setup) {
+	t.Helper()
+	if err := os.WriteFile(s.freshPath, []byte("uninitialized\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetupWithoutProvisioningStateFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	s := &setup{statePath: filepath.Join(dir, "state"), guardPath: filepath.Join(dir, "guard"),
+		freshPath: filepath.Join(dir, "fresh")}
+	if got := s.status(); got.Code != 503 {
+		t.Fatalf("missing provisioning state was accepted: %+v", got)
+	}
+}
+
 func TestSetupRecoveryAndCompletion(t *testing.T) {
 	dir := t.TempDir()
 	accounts := &fakeAccounts{users: map[string]string{}, passwords: map[string]string{}, failRoot: true}
-	state := &setup{accounts: accounts, statePath: filepath.Join(dir, "state"), guardPath: filepath.Join(dir, "guard")}
+	state := &setup{accounts: accounts, statePath: filepath.Join(dir, "state"), guardPath: filepath.Join(dir, "guard"), freshPath: filepath.Join(dir, "fresh")}
+	markFresh(t, state)
 	request := setupRequest{Username: "homeuser", Password: "daily-password-1", RootPassword: "root-password-2"}
 
 	if reply := state.apply(request); reply.Code != 503 {
@@ -64,7 +81,7 @@ func TestSetupRecoveryAndCompletion(t *testing.T) {
 	state.mu.Unlock()
 
 	accounts.failRoot = false
-	restarted := &setup{accounts: accounts, statePath: state.statePath, guardPath: state.guardPath}
+	restarted := &setup{accounts: accounts, statePath: state.statePath, guardPath: state.guardPath, freshPath: state.freshPath}
 	if reply := restarted.apply(request); reply.State != "complete" {
 		t.Fatalf("could not resume: %+v", reply)
 	}
@@ -89,7 +106,8 @@ func TestSetupRecoveryAndCompletion(t *testing.T) {
 func TestRejectExistingAndInvalidAccounts(t *testing.T) {
 	dir := t.TempDir()
 	users := &fakeAccounts{users: map[string]string{"existing": ""}, passwords: map[string]string{}, blockedName: "groupname"}
-	state := &setup{accounts: users, statePath: filepath.Join(dir, "state"), guardPath: filepath.Join(dir, "guard")}
+	state := &setup{accounts: users, statePath: filepath.Join(dir, "state"), guardPath: filepath.Join(dir, "guard"), freshPath: filepath.Join(dir, "fresh")}
+	markFresh(t, state)
 	for name, want := range map[string]int{"existing": 409, "groupname": 409, "root": 400, "htool": 400, "中文": 400, "two users": 400} {
 		if reply := state.apply(setupRequest{name, "daily-password-1", "root-password-2"}); reply.Code != want {
 			t.Fatalf("%q: %+v", name, reply)

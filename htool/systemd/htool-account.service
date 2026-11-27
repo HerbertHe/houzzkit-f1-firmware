@@ -2,7 +2,7 @@
 Description=Houzzkit first-boot account setup
 
 [Service]
-ExecStart=/usr/local/bin/htool account
+ExecStart=/usr/local/bin/htoold account
 StateDirectory=htool-account
 StateDirectoryMode=0700
 UMask=0077

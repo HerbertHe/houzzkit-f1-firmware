@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 type setupRequest struct {
@@ -46,6 +48,8 @@ type setup struct {
 	mu                   sync.Mutex
 	accounts             accounts
 	statePath, guardPath string
+	freshPath            string
+	loginLimiter         loginLimiter
 }
 
 var usernamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,31}$`)
@@ -111,6 +115,10 @@ func atomicWrite(path string, data []byte) error {
 	if err := os.Rename(file.Name(), path); err != nil {
 		return err
 	}
+	return syncDirectory(dir)
+}
+
+func syncDirectory(dir string) error {
 	parent, err := os.Open(dir)
 	if err != nil {
 		return err
@@ -138,11 +146,24 @@ func (s *setup) readState() (journal, error) {
 		}
 		return guard, nil
 	}
-	return readJournal(s.statePath)
+	entry, err := readJournal(s.statePath)
+	if err != nil || entry.Username != "" {
+		return entry, err
+	}
+	const marker = "uninitialized\n"
+	info, err := os.Lstat(s.freshPath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != int64(len(marker)) {
+		return journal{}, errors.New("missing or invalid provisioning state")
+	}
+	fresh, err := os.ReadFile(s.freshPath)
+	if err != nil || string(fresh) != marker {
+		return journal{}, errors.New("missing or invalid provisioning state")
+	}
+	return journal{}, nil
 }
 
 func unavailable() result {
-	return result{Code: 503, Error: "暂时无法完成设置。请稍后重新打开页面。"}
+	return result{Code: 503, Error: "无法读取设备状态或完成操作。请稍后重试，或通过 SSH 或本机终端检查。"}
 }
 
 func describeState(entry journal) result {
@@ -210,6 +231,14 @@ func (s *setup) apply(request setupRequest) result {
 			return unavailable()
 		}
 	}
+	// A durable pending journal now owns setup. Removing the image marker prevents
+	// reopening registration if the completed account records are later lost.
+	if err := os.Remove(s.freshPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return unavailable()
+	}
+	if err := syncDirectory(filepath.Dir(s.freshPath)); err != nil {
+		return unavailable()
+	}
 	if !exists && s.accounts.create(entry.Username, entry.Marker) != nil {
 		return unavailable()
 	}
@@ -224,6 +253,29 @@ func (s *setup) apply(request setupRequest) result {
 	// The independent completion marker is authoritative if this second write fails.
 	_ = saveJournal(s.statePath, entry)
 	return describeState(entry)
+}
+
+func (s *setup) authenticate(password string) result {
+	if s.status().State != "complete" {
+		return unavailable()
+	}
+	if !s.loginLimiter.attempt() {
+		return result{Code: 429, Error: "登录过于频繁，请稍后重试。"}
+	}
+	defer s.loginLimiter.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/local/libexec/htoold-pam")
+	cmd.Stdin = strings.NewReader(password)
+	err := cmd.Run()
+	if err == nil {
+		return result{State: "authenticated"}
+	}
+	var status *exec.ExitError
+	if errors.As(err, &status) && status.ExitCode() == 1 {
+		return result{Code: 401, Error: "管理员密码错误或账号当前不可登录。"}
+	}
+	return unavailable()
 }
 
 type systemAccounts struct{}

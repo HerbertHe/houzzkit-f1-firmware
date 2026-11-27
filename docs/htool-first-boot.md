@@ -1,6 +1,6 @@
 # htool 网页首启与恢复
 
-适用镜像为带 htool 的 F1 Ubuntu 和 Armbian Rockchip USB 直刷固件。首启服务只绑定管理口 `eno1`。该口接入可信局域网时可使用 DHCP，同时保留静态地址 `192.168.55.1/24` 供直连。Avahi 在管理口发布 `houzzkit.local`。HTTP 80 只提供跳转，账号设置通过 HTTPS 443 提交。
+适用镜像为带 htoold 的 F1 Ubuntu 和 Armbian Rockchip USB 直刷固件。首启服务只绑定管理口 `eno1`。该口接入可信局域网时可使用 DHCP，同时保留静态地址 `192.168.55.1/24` 供直连。Avahi 在管理口发布 `houzzkit.local`。HTTP 80 只提供跳转，账号设置通过 HTTPS 443 提交。
 
 ## 设置设备
 
@@ -12,9 +12,17 @@
 
 ## 排查与恢复
 
-- 页面打不开时，先核对网线、所接网口和浏览器地址。如果网络不转发 mDNS，或同一网段有多台 F1 导致主机名冲突，使用对应设备的 DHCP 地址。已有本地管理权限时，可用 `ip -br addr` 和 `systemctl status htool-web.socket htool-redirect.socket htool-account.socket` 核对配置。
+- 页面打不开时，先核对网线、所接网口和浏览器地址。如果网络不转发 mDNS，或同一网段有多台 F1 导致主机名冲突，使用对应设备的 DHCP 地址。已有本地管理权限时，可用 `ip -br addr` 和 `systemctl status htoold.service htool-web.socket htool-redirect.socket htool-account.socket` 核对配置。
 - 提交中断后刷新页面。若设备显示有待恢复的用户名，重新填写两组密码并提交。后台会核对已创建账号是否属于本次初始化。
-- 设置完成后，网页仅显示登录指引。在正常使用中重置密码需要通过已有本机管理权限操作，或采用 [Rockchip 固件恢复流程](../README.md#刷机前准备)。手动删除状态文件可能造成不完整的设备状态。
+- 设置完成后，网页显示 SSH 指引和工作台入口。在正常使用中重置密码需要通过已有本机管理权限操作，或采用 [Rockchip 固件恢复流程](../README.md#刷机前准备)。手动删除状态文件可能造成不完整的设备状态。
 - Go 测试和镜像打包通过后，两种镜像仍需分别确认：管理口可通过 mDNS 名称、DHCP 地址和直连地址注册，另一网口无法注册、普通账号可 SSH、`su -` 可用、重启后注册保持锁定。
 
 htool 由 systemd 恢复进程。整机硬件看门狗的配置属于 BSP 和系统管理，与首启网页独立。
+
+
+## 工作台与旧版状态
+
+- 未初始化的设备访问 `/` 时进入 `/welcome`。已初始化但未登录时进入 `/login`。管理员用 root 密码登录后进入工作台，普通 SSH 用户继续使用原账号。网页会话有效期为 30 分钟，退出登录或服务重启后需要重新登录。
+- 制作新镜像时，安装脚本写入首启标记。旧设备的初始化完成标记、待恢复记录和证书仍分别使用 `/etc/htool/`、`/var/lib/htool-account/` 和 `/var/lib/htool-web/`。这些目录需要随旧 rootfs 保留。
+- 将新版部署到已挂载的旧 rootfs 时，安装脚本的第四个参数为 `preserve-state`。此模式保留 SSH 主机密钥、root 账号状态和首启记录，并让原 443 套接字启动 `htoold.service`。在系统上采用离线部署后重启生效。
+- 旧设备没有首启标记或记录损坏时，网页返回设备状态异常。请通过已授权的 SSH 或本机终端核对上述记录。仅在确认设备从未初始化时恢复首启标记。

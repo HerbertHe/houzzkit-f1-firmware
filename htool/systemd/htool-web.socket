@@ -1,8 +1,9 @@
 [Unit]
-Description=Houzzkit first-boot HTTPS (management port)
+Description=Houzzkit workbench HTTPS (management port)
 After=systemd-sysusers.service
 
 [Socket]
+Service=htoold.service
 ListenStream=[::]:443
 BindIPv6Only=both
 BindToDevice=eno1

@@ -148,8 +148,11 @@ if [[ -n ${FIRMWARE_VERSION:-} ]]; then
   sudo install -m 0644 "$RUNNER_TEMP/houzzkit-firmware.json" "$rootfs_tree/etc/houzzkit-firmware.json"
 fi
 
-require_file "$RUNNER_TEMP/htool-arm64"
-sudo bash "$PWD/htool/install-rootfs.sh" "$rootfs_tree" "$RUNNER_TEMP/htool-arm64"
+require_file "$RUNNER_TEMP/htoold-arm64"
+"$toolchain" -O2 -Wall -Wextra -Werror -idirafter /usr/include \
+  "$PWD/htool/pam/verify.c" -o "$RUNNER_TEMP/htoold-pam-arm64" -ldl
+sudo bash "$PWD/htool/install-rootfs.sh" "$rootfs_tree" \
+  "$RUNNER_TEMP/htoold-arm64" "$RUNNER_TEMP/htoold-pam-arm64"
 
 # Size from allocated blocks, with space for the ext4 journal and inode tables.
 read -r used_mib _ < <(sudo du -sm "$rootfs_tree")

@@ -49,11 +49,11 @@ jobs:
           go-version: '1.27.4'
           cache: false
 
-      - name: Test and cross-compile htool
+      - name: Test and cross-compile htoold
         working-directory: htool
         run: |
           go test -race ./...
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/htool-arm64" .
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/htoold-arm64" .
 
       - name: Install Linux build dependencies
         run: |
@@ -62,7 +62,7 @@ jobs:
             acl bc binfmt-support bison bsdextrautils build-essential bzip2 chrpath \
             cpio curl device-tree-compiler diffstat e2fsprogs expect fakeroot file flex \
             g++-multilib gawk gcc-multilib git kmod libelf-dev libgmp-dev liblz4-tool libmpc-dev \
-            libncurses-dev libssl-dev live-build openssh-client patchelf pkg-config \
+            libncurses-dev libpam0g-dev libssl-dev live-build openssh-client patchelf pkg-config \
             python2 python3 python3-pip qemu-user-static rsync schroot texinfo time \
             u-boot-tools unzip uuid-dev xz-utils zlib1g-dev zstd
 

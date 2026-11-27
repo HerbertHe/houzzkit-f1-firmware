@@ -75,7 +75,7 @@ UUID=<SSD_EXT4_UUID> /mnt/ssd ext4 defaults,nofail,x-systemd.device-timeout=10s 
 2. 核对 SSD 型号、UUID、容量及现有文件。优先复用已有 ext4 数据盘。仅在确认选中空盘或已备份的数据盘后，初始化或格式化。通过挂载测试后再停服务。
 3. 停止 Compose 栈、Docker socket、Docker daemon 和相关 containerd 服务，确保 SQLite 等数据库停止写入。用保留属主、ACL、xattr 与硬链接的方式复制实际目录，例如离线树复制采用 `rsync -aHAX --numeric-ids`。分别处理 Docker 存储和应用 bind mount。
 4. 写入新路径和挂载依赖。保持 Docker 存储后端及版本一致，切换后核对镜像、卷、数据库和 Zigbee 配对记录。Compose bind mount 使用显式源路径，并避免自动创建不存在的宿主数据目录。
-5. SSD 写入前可通过旧配置恢复。切换后如果已有业务写入，先停服务，将最新数据迁回再切换。完成冷启动、缺盘和回退测试后，另行确认是否清理旧副本。
+5. SSD 写入前可通过旧配置恢复。切换后如果已有业务写入，先停服务，将最新数据迁回再切换。迁移成功并确认旧目录无服务引用后，用户可删除原盘副本。用户安装的 1Panel 继续连接原宿主 Docker socket，可启动迁移后的容器。工作台入口及清理规则见 [第一期 SSD 管理方案](ssd-management-phase-1.md#docker-数据迁移)。
 
 Docker `data-root` 只影响引擎自身的数据。使用 containerd image store 时，还要配置 containerd 的存储目录。 [Docker daemon 目录](https://docs.docker.com/engine/daemon/)
 

@@ -5,6 +5,7 @@
 - [下载 GitHub Releases](https://github.com/HerbertHe/houzzkit-f1-firmware/releases)
 - [查看 GitHub Actions](https://github.com/HerbertHe/houzzkit-f1-firmware/actions/workflows/firmware.yml)
 - [Armbian 可执行适配方案](docs/armbian-adaptation.md)
+- [第一期 SSD 管理方案](docs/ssd-management-phase-1.md)
 - [在线更新与回滚方案](docs/firmware-update-rollback.md)
 - [变更记录](CHANGELOG.md)
 
@@ -142,7 +143,7 @@ HTTP 80 会跳转到 HTTPS 443，密码仅通过 HTTPS 提交。首启页面只�
 
 ### htoold 工作台
 
-首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口。设备映射页可在线绑定 Zigbee 协调器并复制 Compose 配置。启动检查页保留最近三次完整记录。固件更新页目前显示「敬请期待」。本期交付 [在线更新与回滚方案](docs/firmware-update-rollback.md)，版本检查将在后续版本提供。
+首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口。设备映射页可在线绑定 Zigbee 协调器并复制 Compose 配置。启动检查页保留最近三次完整记录。固件更新页目前显示「敬请期待」。工作台接下来的交付分为 SSD 管理、数据维护和固件更新三期。 [分期方案](docs/firmware-update-rollback.md#分期路线)
 
 Ubuntu 和 Armbian 均预装 Docker 和 Compose v2，1Panel 由用户自行安装。开机时先恢复 Zigbee 设备映射，再启动 Docker。协调器缺失时，等待结束后 Docker 仍可启动。绑定、自启和 1Panel 编排方法见 [Docker 硬件直通指南](docs/docker-hardware-passthrough.md)。
 

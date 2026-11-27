@@ -209,12 +209,16 @@ func (h webHandler) page(w http.ResponseWriter, r *http.Request) {
 	status := h.request(nil)
 	initialized := status.State == "complete" && status.Code == 0
 	ready := status.Code == 0 && (status.State == "ready" || status.State == "pending" || status.State == "running")
+	path := r.URL.Path
 	if !initialized && !ready {
-		writeResult(w, unavailable())
+		if path == "/api/v1/workbench" {
+			writeResult(w, unavailable())
+		} else {
+			serveRecovery(w, r)
+		}
 		return
 	}
 	loggedIn := initialized && h.sessions.valid(r)
-	path := r.URL.Path
 	if path == "/api/v1/workbench" {
 		if !loggedIn {
 			writeResult(w, result{Code: 401, Error: "请以系统管理员身份登录。"})
@@ -236,5 +240,18 @@ func (h webHandler) page(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 	default:
 		http.ServeFileFS(w, r, assets, "web/workspace.html")
+	}
+}
+
+func serveRecovery(w http.ResponseWriter, r *http.Request) {
+	page, err := assets.ReadFile("web/recovery.html")
+	if err != nil {
+		http.Error(w, unavailable().Error, http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(page)
 	}
 }

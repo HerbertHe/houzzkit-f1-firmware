@@ -39,7 +39,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
@@ -55,14 +55,22 @@ jobs:
           go test -race ./...
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/htoold-arm64" .
 
-      - name: Install Linux build dependencies
+      - name: Build the ARM64 PAM helper
         run: |
           sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross libpam0g-dev
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -idirafter /usr/include \
+            htool/pam/verify.c -o "$RUNNER_TEMP/htoold-pam-arm64" -ldl
+          aarch64-linux-gnu-readelf -h "$RUNNER_TEMP/htoold-pam-arm64" | grep 'Machine:.*AArch64'
+
+      - name: Install Linux build dependencies
+        run: |
           sudo apt-get install -y --no-install-recommends \
             acl bc binfmt-support bison bsdextrautils build-essential bzip2 chrpath \
             cpio curl device-tree-compiler diffstat e2fsprogs expect fakeroot file flex \
             g++-multilib gawk gcc-multilib git kmod libelf-dev libgmp-dev liblz4-tool libmpc-dev \
-            libncurses-dev libpam0g-dev libssl-dev live-build openssh-client patchelf pkg-config \
+            libncurses-dev libssl-dev live-build openssh-client patchelf pkg-config \
             python2 python3 python3-pip qemu-user-static rsync schroot texinfo time \
             u-boot-tools unzip uuid-dev xz-utils zlib1g-dev zstd
 
@@ -73,7 +81,7 @@ jobs:
         run: bash .github/scripts/build-firmware.sh "$FLAVOR"
 
       - name: Upload firmware
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: houzzkit-firmware-${{ inputs.flavor }}
           path: |

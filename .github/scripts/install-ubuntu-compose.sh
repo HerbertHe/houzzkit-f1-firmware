@@ -63,6 +63,7 @@ options=(
   -o "Dir::Cache::archives=$inside/archives"
   -o Dir::Cache::pkgcache=
   -o Dir::Cache::srcpkgcache=
+  -o Dpkg::Use-Pty=0
   -o Acquire::Retries=3
 )
 export DEBIAN_FRONTEND=noninteractive

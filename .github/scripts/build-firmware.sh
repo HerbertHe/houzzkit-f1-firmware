@@ -46,6 +46,9 @@ prepare_pack_tools() (
 )
 
 # Check this board's static inputs before changing rootfs permissions or compiling.
+require_file "$RUNNER_TEMP/htoold-arm64"
+require_file "$RUNNER_TEMP/htoold-pam-arm64"
+
 for input in \
   "$chip/$defconfig" "$partition_template" "$chip/boot4recovery.its" \
   "$images/rk356x-recovery-arm64.cpio.gz" "$images/wipe_all-misc.img" \
@@ -151,9 +154,6 @@ if [[ -n ${FIRMWARE_VERSION:-} ]]; then
   sudo install -m 0644 "$RUNNER_TEMP/houzzkit-firmware.json" "$rootfs_tree/etc/houzzkit-firmware.json"
 fi
 
-require_file "$RUNNER_TEMP/htoold-arm64"
-"$toolchain" -O2 -Wall -Wextra -Werror -idirafter /usr/include \
-  "$PWD/htool/pam/verify.c" -o "$RUNNER_TEMP/htoold-pam-arm64" -ldl
 sudo bash "$PWD/htool/install-rootfs.sh" "$rootfs_tree" \
   "$RUNNER_TEMP/htoold-arm64" "$RUNNER_TEMP/htoold-pam-arm64"
 

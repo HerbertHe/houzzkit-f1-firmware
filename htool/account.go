@@ -322,9 +322,12 @@ func (systemAccounts) password(name, value string) error {
 }
 
 func decodeJSON(reader io.Reader, target any) error {
-	const limit = 4096
+	return decodeLimitedJSON(reader, target, 4096)
+}
+
+func decodeLimitedJSON(reader io.Reader, target any, limit int64) error {
 	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
-	if err != nil || len(data) > limit {
+	if err != nil || int64(len(data)) > limit {
 		return errors.New("invalid request size")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))

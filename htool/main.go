@@ -113,14 +113,22 @@ func runWeb(listener net.Listener) error {
 	return server.ServeTLS(listener, "", "")
 }
 
-func runAccounts(listener net.Listener) error {
+func webUID() (uint32, error) {
 	webUser, err := user.Lookup("htool")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	uid, err := strconv.ParseUint(webUser.Uid, 10, 32)
 	if err != nil || uid == 0 {
-		return errors.New("invalid htool account UID")
+		return 0, errors.New("invalid htool account UID")
+	}
+	return uint32(uid), nil
+}
+
+func runAccounts(listener net.Listener) error {
+	uid, err := webUID()
+	if err != nil {
+		return err
 	}
 	service := &setup{
 		accounts:  systemAccounts{},
@@ -135,7 +143,7 @@ func runAccounts(listener net.Listener) error {
 		}
 		go func() {
 			defer conn.Close()
-			if !isPeer(conn, uint32(uid)) {
+			if !isPeer(conn, uid) {
 				return
 			}
 			_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
@@ -161,7 +169,7 @@ func runAccounts(listener net.Listener) error {
 
 func main() {
 	if len(os.Args) != 2 {
-		log.Fatal("usage: htoold web|redirect|account")
+		log.Fatal("usage: htoold web|redirect|account|hardware")
 	}
 	listener, err := activatedListener()
 	if err != nil {
@@ -182,8 +190,10 @@ func main() {
 		err = server.Serve(listener)
 	case "account":
 		err = runAccounts(listener)
+	case "hardware":
+		err = runHardware(listener)
 	default:
-		err = errors.New("usage: htoold web|redirect|account")
+		err = errors.New("usage: htoold web|redirect|account|hardware")
 	}
 	log.Fatal(err)
 }

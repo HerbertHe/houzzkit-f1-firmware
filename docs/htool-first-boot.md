@@ -26,3 +26,5 @@ htool 由 systemd 恢复进程。整机硬件看门狗的配置属于 BSP 和系
 - 制作新镜像时，安装脚本写入首启标记。旧设备的初始化完成标记、待恢复记录和证书仍分别使用 `/etc/htool/`、`/var/lib/htool-account/` 和 `/var/lib/htool-web/`。这些目录需要随旧 rootfs 保留。
 - 将新版部署到已挂载的旧 rootfs 时，安装脚本的第四个参数为 `preserve-state`。此模式保留 SSH 主机密钥、root 账号状态和首启记录，并让原 443 套接字启动 `htoold.service`。在系统上采用离线部署后重启生效。
 - 旧设备没有首启标记或记录损坏时，网页显示「设备状态暂时不可用」和重试入口。请通过已授权的 SSH 或本机终端核对上述记录。仅在确认设备从未初始化时恢复首启标记。
+
+硬件绑定配置位于 `/etc/htoold/zigbee.json`，启动报告位于 `/var/lib/htoold-hardware/boot-checks.json`。升级或备份时保留这些文件。硬件检查由 `htool-hardware.service` 异步运行，可用 `journalctl -u htool-hardware.service` 查看详情。 [Docker 硬件直通指南](docker-hardware-passthrough.md)

@@ -6,6 +6,7 @@
   <title>工作台 · htoold</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/workspace.js" defer></script>
+  <script src="/hardware.js" defer></script>
 </head>
 <body class="workbench">
   <aside class="sidebar">
@@ -28,12 +29,39 @@
         <h1>设备映射</h1>
         <article class="account">
           <h2>Zigbee 协调器</h2>
-          <p class="note">当前固件尚未提供硬件绑定。</p>
+          <p class="note" id="mapping-status" role="status">正在读取设备映射…</p>
+          <div id="mapping-controls" hidden>
+            <label for="coordinator">候选串口</label>
+            <select id="coordinator"><option value="">请选择设备</option></select>
+            <p class="rule" id="candidate-details"></p>
+            <footer>
+              <button id="mapping-refresh" type="button">刷新列表</button>
+              <button id="mapping-unbind" type="button" disabled>解除绑定</button>
+              <button id="mapping-bind" class="primary" type="button" disabled>绑定设备</button>
+            </footer>
+          </div>
+        </article>
+        <article class="account compose-card">
+          <h2>Compose 硬件直通</h2>
+          <p class="note">将这段加入 Zigbee2MQTT 服务。更换绑定后，可在 1Panel 中重建该服务。</p>
+          <pre id="compose-devices"><code>devices:
+  - "/dev/zigbee_dongle:/dev/zigbee:rw"</code></pre>
+          <footer>
+            <a class="button" href="https://github.com/HerbertHe/houzzkit-f1-firmware/blob/main/docs/docker-hardware-passthrough.md">直通指南</a>
+            <button id="copy-compose" type="button">复制</button>
+          </footer>
         </article>
       </section>
       <section data-route="/hardware/boot-checks" hidden>
         <h1>启动检查</h1>
-        <article class="account"><p class="note">当前固件尚未记录启动硬件检查。</p></article>
+        <article class="account">
+          <p class="note" id="report-status" role="status">正在读取报告…</p>
+          <div id="report-history" hidden>
+            <label for="boot-report">开机记录</label>
+            <select id="boot-report"></select>
+            <dl class="check-list" id="boot-check-list"></dl>
+          </div>
+        </article>
       </section>
       <section data-route="/firmware" hidden>
         <h1>固件更新</h1>

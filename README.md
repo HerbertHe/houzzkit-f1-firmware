@@ -141,7 +141,9 @@ HTTP 80 会跳转到 HTTPS 443，密码仅通过 HTTPS 提交。首启页面只�
 
 ### htoold 工作台
 
-首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口；本阶段提供页面导航和设备版本信息。「固件更新」暂时显示「敬请期待」，本期更新功能仅计划提供版本检查。
+首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口；设备映射页可在线绑定 Zigbee 协调器并复制 Compose 配置。启动检查页保留最近三次完整记录。「固件更新」暂时显示「敬请期待」，本期更新功能仅计划提供版本检查。
+
+绑定与 1Panel 编排方法见 [Docker 硬件直通指南](docs/docker-hardware-passthrough.md)。
 
 工作台的陶土色配色、侧栏和卡片布局参考了 **7Dollar**。 [itsmaiGe/luci-theme-7dollar](https://github.com/itsmaiGe/luci-theme-7dollar)
 

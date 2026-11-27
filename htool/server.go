@@ -131,7 +131,7 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
-	case "/api/v1/setup", "/api/v1/login", "/api/v1/logout":
+	case "/api/v1/setup", "/api/v1/login", "/api/v1/logout", "/api/v1/hardware/binding":
 		if !allowMethod(w, r, http.MethodPost) {
 			return
 		}
@@ -159,6 +159,8 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.login(w, r)
 		case "/api/v1/logout":
 			h.logout(w, r)
+		case "/api/v1/hardware/binding":
+			h.hardware(w, r, "")
 		}
 	case "/api/v1/setup/status":
 		if allowMethod(w, r, http.MethodGet) {
@@ -168,7 +170,15 @@ func (h webHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			writeResult(w, status)
 		}
-	case "/style.css", "/app.js", "/login.js", "/workspace.js":
+	case "/api/v1/hardware", "/api/v1/hardware/boot-reports":
+		if allowMethod(w, r, http.MethodGet) {
+			operation := "mapping"
+			if r.URL.Path == "/api/v1/hardware/boot-reports" {
+				operation = "reports"
+			}
+			h.hardware(w, r, operation)
+		}
+	case "/style.css", "/app.js", "/login.js", "/workspace.js", "/hardware.js":
 		if allowMethod(w, r, http.MethodGet, http.MethodHead) {
 			http.ServeFileFS(w, r, assets, "web"+r.URL.Path)
 		}

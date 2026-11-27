@@ -72,3 +72,10 @@ pre { background: var(--stage); border: 1px solid var(--line); border-radius: 8p
   .sidebar nav { display: flex; flex-wrap: wrap; }
   .workbench main { padding-block: 24px; }
 }
+
+.compose-card { margin-top: 14px; }
+.account select { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--panel); color: var(--ink); font: inherit; }
+.account footer { flex-wrap: wrap; }
+.check-list { margin-bottom: 0; }
+.check-list dt { margin-top: 13px; font-weight: 650; }
+.check-list dd { margin: 4px 0 10px; color: var(--secondary); overflow-wrap: anywhere; }

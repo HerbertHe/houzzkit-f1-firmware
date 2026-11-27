@@ -1,0 +1,26 @@
+[Unit]
+Description=Houzzkit device mappings and startup checks
+Requires=htool-hardware.socket
+After=htool-hardware.socket systemd-udevd.service
+
+[Service]
+Sockets=htool-hardware.socket
+ExecStart=/usr/local/bin/htoold hardware
+ConfigurationDirectory=htoold
+ConfigurationDirectoryMode=0700
+StateDirectory=htoold-hardware
+StateDirectoryMode=0700
+RuntimeDirectory=htoold-hardware
+RuntimeDirectoryMode=0755
+UMask=0077
+Restart=on-failure
+RestartSec=3s
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/dev
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

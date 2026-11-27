@@ -51,4 +51,4 @@ if [[ "$mode" == fresh ]]; then
   printf 'uninitialized\n' > "$rootfs/etc/htool/uninitialized"
   chmod 0600 "$rootfs/etc/htool/uninitialized"
 fi
-systemctl --root="$rootfs" enable avahi-daemon.service htool-account.socket htool-web.socket htool-redirect.socket htoold.service
+systemctl --root="$rootfs" enable avahi-daemon.service htool-account.socket htool-web.socket htool-redirect.socket htool-hardware.socket htoold.service htool-hardware.service

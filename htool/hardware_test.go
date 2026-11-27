@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMappingPersistenceAndConflict(t *testing.T) {
@@ -78,6 +80,53 @@ func TestRetainLastThreeBoots(t *testing.T) {
 	}
 	if len(history) != 3 || history[0].BootID != "d" || history[1].BootID != "c" || history[2].BootID != "b" {
 		t.Fatalf("unexpected retained order: %+v", history)
+	}
+}
+
+func TestRecoverBootReports(t *testing.T) {
+	m := &hardwareManager{stateDir: t.TempDir()}
+	active := filepath.Join(m.stateDir, bootReportsFile)
+	backup := filepath.Join(m.stateDir, invalidBootReportsFile)
+	corrupt := []byte(`[{"bootId":`)
+	if err := os.WriteFile(active, corrupt, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.loadReports(); !errors.Is(err, errInvalidBootReports) {
+		t.Fatalf("expected invalid history, got %v", err)
+	}
+	if _, err := os.Stat(backup); !os.IsNotExist(err) {
+		t.Fatalf("read-only lookup moved the invalid history: %v", err)
+	}
+	if history, err := m.recoverReports(); err != nil || len(history) != 0 {
+		t.Fatalf("invalid history did not recover: %+v, %v", history, err)
+	}
+	if data, err := os.ReadFile(backup); err != nil || string(data) != string(corrupt) {
+		t.Fatalf("invalid history was not preserved: %q, %v", data, err)
+	}
+	report := bootReport{
+		BootID:  "12345678-1234-1234-1234-123456789abc",
+		Checked: time.Now().UTC(),
+		Checks:  []bootCheck{{Name: "eMMC", State: "ready"}},
+	}
+	if err := saveHardwareState(active, retainBootReport(nil, report)); err != nil {
+		t.Fatal(err)
+	}
+	if history, err := m.recoverReports(); err != nil || len(history) != 1 || history[0].BootID != report.BootID {
+		t.Fatalf("new report was not retained: %+v, %v", history, err)
+	}
+}
+
+func TestBootReportReadFailureIsNotQuarantined(t *testing.T) {
+	m := &hardwareManager{stateDir: t.TempDir()}
+	active := filepath.Join(m.stateDir, bootReportsFile)
+	if err := os.Mkdir(active, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.recoverReports(); err == nil || errors.Is(err, errInvalidBootReports) {
+		t.Fatalf("expected filesystem error, got %v", err)
+	}
+	if info, err := os.Stat(active); err != nil || !info.IsDir() {
+		t.Fatalf("unreadable path was moved: %v", err)
 	}
 }
 
@@ -204,6 +253,26 @@ func TestBootRetryDistinguishesWaitingFromConflict(t *testing.T) {
 	status, err = manager.reconcile(&device, []serialCandidate{waiting, waiting})
 	if err != nil || status.State != "conflict" || checksNeedRetry([]bootCheck{{Name: "Zigbee", State: status.State}}) {
 		t.Fatalf("duplicate identity was not distinguished from waiting: %+v, %v", status, err)
+	}
+}
+
+func TestUSBStoredBindingUsesPortOnlyWithoutSerial(t *testing.T) {
+	manager := &hardwareManager{configDir: t.TempDir()}
+	for _, tc := range []struct {
+		saved, expected deviceIdentity
+	}{
+		{deviceIdentity{Kind: "usb", Serial: "coordinator"}, deviceIdentity{Kind: "usb", Serial: "coordinator"}},
+		{deviceIdentity{Kind: "usb", Serial: "coordinator", Topology: "old-port"}, deviceIdentity{Kind: "usb", Serial: "coordinator"}},
+		{deviceIdentity{Kind: "usb", Topology: "same-port"}, deviceIdentity{Kind: "usb", Topology: "same-port"}},
+	} {
+		if err := saveHardwareState(filepath.Join(manager.configDir, "zigbee.json"),
+			bindingRecord{Revision: initialBindingRevision, Device: &tc.saved}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := manager.binding()
+		if err != nil || got.Revision != initialBindingRevision || got.Device == nil || *got.Device != tc.expected {
+			t.Fatalf("reading %+v gave %+v, %v", tc.saved, got, err)
+		}
 	}
 }
 

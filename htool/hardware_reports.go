@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -28,16 +30,57 @@ var bootIDPattern = regexp.MustCompile(`^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{1
 var emmcPattern = regexp.MustCompile(`^mmcblk[0-9]+$`)
 var nvmePattern = regexp.MustCompile(`^nvme[0-9]+n[0-9]+$`)
 
+const bootReportsFile = "boot-checks.json"
+const invalidBootReportsFile = "boot-checks.invalid.json"
+const maxBootReportsBytes = 48 << 10
+
+var errInvalidBootReports = errors.New("invalid boot history")
+
 func (m *hardwareManager) loadReports() ([]bootReport, error) {
-	var reports []bootReport
-	err := readHardwareState(filepath.Join(m.stateDir, "boot-checks.json"), &reports)
+	file, err := os.Open(filepath.Join(m.stateDir, bootReportsFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
-	if err == nil && len(reports) > 3 {
-		err = errors.New("invalid boot history")
+	if err != nil {
+		return nil, err
 	}
-	return reports, err
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxBootReportsBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxBootReportsBytes {
+		return nil, errInvalidBootReports
+	}
+	var reports []bootReport
+	if err := decodeStrictJSON(data, &reports); err != nil {
+		return nil, fmt.Errorf("%w: %v", errInvalidBootReports, err)
+	}
+	if reports == nil || len(reports) > 3 {
+		return nil, errInvalidBootReports
+	}
+	for _, report := range reports {
+		if !bootIDPattern.MatchString(report.BootID) || report.Checked.IsZero() || len(report.Checks) == 0 {
+			return nil, errInvalidBootReports
+		}
+	}
+	return reports, nil
+}
+
+// Only the boot recorder may move invalid history out of the active path.
+func (m *hardwareManager) recoverReports() ([]bootReport, error) {
+	history, err := m.loadReports()
+	if !errors.Is(err, errInvalidBootReports) {
+		return history, err
+	}
+	if err := os.Rename(filepath.Join(m.stateDir, bootReportsFile), filepath.Join(m.stateDir, invalidBootReportsFile)); err != nil {
+		return nil, err
+	}
+	if err := syncDirectory(m.stateDir); err != nil {
+		return nil, err
+	}
+	log.Printf("boot-check: moved invalid history to %s: %v", invalidBootReportsFile, err)
+	return nil, nil
 }
 
 func (m *hardwareManager) reports() hardwareReply {
@@ -62,7 +105,7 @@ func (m *hardwareManager) recordBoot() {
 		return
 	}
 	m.reportMu.Lock()
-	history, err := m.loadReports()
+	history, err := m.recoverReports()
 	m.reportMu.Unlock()
 	if err != nil {
 		m.bootReportFailure(err)
@@ -88,7 +131,7 @@ func (m *hardwareManager) recordBoot() {
 	}
 	history = retainBootReport(history, report)
 	m.reportMu.Lock()
-	err = saveHardwareState(filepath.Join(m.stateDir, "boot-checks.json"), history)
+	err = saveHardwareState(filepath.Join(m.stateDir, bootReportsFile), history)
 	m.reportMu.Unlock()
 	if err != nil {
 		m.bootReportFailure(err)

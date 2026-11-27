@@ -40,6 +40,8 @@ sed -i -E '/^[[:space:]]*(host-name|allow-interfaces)[[:space:]]*=/d; /^\[server
 for unit in "$project"/systemd/*.{service,socket}; do
   install -D -m 0644 "$unit" "$rootfs/usr/lib/systemd/system/${unit##*/}"
 done
+install -D -m 0644 "$project/systemd/docker.service.d/10-htool-hardware.conf" \
+  "$rootfs/usr/lib/systemd/system/docker.service.d/10-htool-hardware.conf"
 systemd-sysusers --root="$rootfs" htool.conf
 rm -f -- "$rootfs/usr/lib/systemd/system/htool-web.service"
 if [[ -L "$rootfs/etc/systemd/system/multi-user.target.wants/htool-web.service" ]]; then

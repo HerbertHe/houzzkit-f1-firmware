@@ -5,6 +5,7 @@
 - [下载 GitHub Releases](https://github.com/HerbertHe/houzzkit-f1-firmware/releases)
 - [查看 GitHub Actions](https://github.com/HerbertHe/houzzkit-f1-firmware/actions/workflows/firmware.yml)
 - [Armbian 可执行适配方案](docs/armbian-adaptation.md)
+- [在线更新与回滚方案](docs/firmware-update-rollback.md)
 - [变更记录](CHANGELOG.md)
 
 | 路径 | 用途 |
@@ -141,9 +142,9 @@ HTTP 80 会跳转到 HTTPS 443，密码仅通过 HTTPS 提交。首启页面只�
 
 ### htoold 工作台
 
-首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口；设备映射页可在线绑定 Zigbee 协调器并复制 Compose 配置。启动检查页保留最近三次完整记录。「固件更新」暂时显示「敬请期待」，本期更新功能仅计划提供版本检查。
+首页 `/` 根据设备状态进入 `/welcome` 或 `/login`。完成初始化后，用系统管理员 root 密码在网页登录。已登录时首页显示设备映射，侧栏提供启动检查和固件更新入口。设备映射页可在线绑定 Zigbee 协调器并复制 Compose 配置。启动检查页保留最近三次完整记录。固件更新页目前显示「敬请期待」。本期交付 [在线更新与回滚方案](docs/firmware-update-rollback.md)，版本检查将在后续版本提供。
 
-Ubuntu 和 Armbian 均预装 Docker 和 Compose v2，1Panel 由用户自行安装。绑定与 1Panel 编排方法见 [Docker 硬件直通指南](docs/docker-hardware-passthrough.md)。
+Ubuntu 和 Armbian 均预装 Docker 和 Compose v2，1Panel 由用户自行安装。开机时先恢复 Zigbee 设备映射，再启动 Docker。协调器缺失时，等待结束后 Docker 仍可启动。绑定、自启和 1Panel 编排方法见 [Docker 硬件直通指南](docs/docker-hardware-passthrough.md)。
 
 工作台的陶土色配色、侧栏和卡片布局参考了 **7Dollar**。 [itsmaiGe/luci-theme-7dollar](https://github.com/itsmaiGe/luci-theme-7dollar)
 
@@ -155,7 +156,7 @@ Ubuntu 和 Armbian 均预装 Docker 和 Compose v2，1Panel 由用户自行安�
 - `main` 构建成功后发布正式版，同仓库 PR 发布预发行版，Fork PR 可下载 Actions 构建产物。两种固件分别按工作流启动时的北京时间编号，同仓库 PR 和正式版共用当日序号。重跑同一工作流沿用原编号，镜像内的 `/etc/houzzkit-firmware.json` 与 Release 中的版本记录一致。历史版本仍可按原名称下载。以 Armbian 为例，当天第一个是 `houzzkit-firmware-armbian-2026_11_26`，第二个加 `_1`。
 
 - 镜像版本记录包含 GitHub Actions 运行编号、实际打包的 BSP 内核版本、分区布局标识和分区模板的 SHA-256。当前布局标识为 `rockchip-gpt-single-rootfs-v1`。打包按镜像大小调整分区时，模板校验值仍标识构建输入。
-- Ubuntu 和 Armbian 都发布正式版。后续工作台按设备当前发行版筛选正式更新，并按签名清单里的版本顺序比较。GitHub 的 Latest 标记适用于整个仓库，不能作为某一发行版的更新依据。
+- Ubuntu 和 Armbian 可并行构建与发布正式版。请在 Releases 中按设备当前发行版下载。GitHub 的 Latest 仅用于仓库页面展示，标记更新失败只产生告警。标记按日期和数字序号选出，两种固件同一天同序号时优先 Armbian。后续工作台按设备发行版和签名清单选择具体版本及下载文件。
 
 ## APT 软件源
 

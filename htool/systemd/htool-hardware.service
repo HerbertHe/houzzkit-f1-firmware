@@ -4,6 +4,9 @@ Requires=htool-hardware.socket
 After=htool-hardware.socket systemd-udevd.service
 
 [Service]
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=15s
 Sockets=htool-hardware.socket
 ExecStart=/usr/local/bin/htoold hardware
 ConfigurationDirectory=htoold

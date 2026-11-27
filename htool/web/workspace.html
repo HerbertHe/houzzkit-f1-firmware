@@ -43,8 +43,9 @@
         </article>
         <article class="account compose-card">
           <h2>Compose 硬件直通</h2>
-          <p class="note">将这段加入 Zigbee2MQTT 服务。更换绑定后，可在 1Panel 中重建该服务。</p>
-          <pre id="compose-devices"><code>devices:
+          <p class="note">将这段合并到 Zigbee2MQTT 服务。已有重启策略时，请保留原有设置。</p>
+          <pre id="compose-devices"><code>restart: unless-stopped
+devices:
   - "/dev/zigbee_dongle:/dev/zigbee:rw"</code></pre>
           <footer>
             <a class="button" href="https://github.com/HerbertHe/houzzkit-f1-firmware/blob/main/docs/docker-hardware-passthrough.md">直通指南</a>
@@ -61,13 +62,16 @@
             <select id="boot-report"></select>
             <dl class="check-list" id="boot-check-list"></dl>
           </div>
+          <footer id="report-actions" hidden>
+            <button id="report-refresh" type="button">重新读取</button>
+          </footer>
         </article>
       </section>
       <section data-route="/firmware" hidden>
         <h1>固件更新</h1>
         <article class="account">
           <h2>敬请期待</h2>
-          <p class="note">本期计划支持检查新版本。</p>
+          <p class="note">版本检查将在后续版本提供。</p>
         </article>
       </section>
     </main>

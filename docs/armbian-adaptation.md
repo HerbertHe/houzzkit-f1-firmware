@@ -8,7 +8,7 @@
 - 首版采用 Armbian Ubuntu 24.04 LTS ARM64 Minimal。eMMC 承载 bootloader、`/boot` 和 ext4 根文件系统 `/`。通过 Rockchip USB 协议直接写入 eMMC。TF 卡和 `armbian-install` 均无需参与刷写。
 - 无 SSD 时系统可独立启动，Docker 可使用 eMMC。启用可选迁移后，Docker 引擎数据、应用持久数据、数据库和容器日志均置于 SSD。
 - 默认运行 `multi-user.target`，保留 HDMI TTY、串口诊断、SSH、双以太网口和 Avahi。`eno1` 使用与 Ubuntu 相同的 DHCP 配置及静态直连地址 `192.168.55.1/24`，其他有线网口使用 DHCP。SSH 禁止 root 登录。管理口上的首启页面可通过 `https://houzzkit.local` 或管理口实际 IP 访问。镜像不安装桌面、显示管理器、Xorg 或 Wayland。
-- 四个核心应用使用 Compose v2。Zigbee2MQTT 独占 Zigbee 协调器，Home Assistant 通过 MQTT 接入。1Panel 提供辅助管理入口。
+- Home Assistant、Mosquitto 和 Zigbee2MQTT 可由用户通过 Compose v2 部署。Zigbee2MQTT 独占 Zigbee 协调器，Home Assistant 通过 MQTT 接入。1Panel 由用户按需安装，用于辅助管理。
 
 ## 2. 阶段一：建立 F1 板级构建配置
 
@@ -84,7 +84,7 @@ Docker `data-root` 只影响引擎自身的数据。使用 containerd image stor
 ### ZRAM、日志与服务
 
 - 保留 `armbian-zram-config`，显式配置物理内存约 50% 的逻辑交换容量，目标约 2 GiB，算法 LZ4。设置 `vm.swappiness=10`，禁用 eMMC 和 SSD 的磁盘 swap。用 `zramctl`、`swapon --show`、`sysctl vm.swappiness` 验证真实生效值。
-- 根据实机 `MemTotal` 给宿主预留约 800 MiB。四个预置容器硬上限合计 2176 MiB。烧机期间记录 ZRAM 占用、容器内存、SSH 响应和 OOM 事件；容器上限不包含新的第三方面板应用。
+- 根据实机 `MemTotal` 给宿主预留约 800 MiB。三项核心服务的建议硬上限合计 1920 MiB。若以容器部署可选的 1Panel，再预留 256 MiB。烧机期间记录 ZRAM 占用、容器内存、SSH 响应和 OOM 事件。
 - Docker daemon 设置 `log-driver: json-file`、`max-size: "10m"`、`max-file: "3"`。更新日志配置后重新创建需要继承新配置的容器。
 - 用 Compose v2 单独管理核心容器。每个服务设置服务层级的 `mem_limit`，再用 `docker inspect` 核对运行态的内存限制。正式镜像固定经过验证的 ARM64 版本或镜像摘要。 [Armbian 内存配置](https://docs.armbian.com/config/storage/) · [Docker 日志配置](https://docs.docker.com/engine/logging/drivers/json-file/) · [Compose 服务配置](https://docs.docker.com/reference/compose-file/services/)
 
@@ -95,7 +95,7 @@ Docker `data-root` 只影响引擎自身的数据。使用 containerd image stor
 | Home Assistant | `ghcr.io/home-assistant/home-assistant`，1536 MiB | 默认 bridge，显式发布局域网端口。应用目录 `ha/config`。Recorder 设置 `commit_interval: 30`、`auto_purge: true`、`auto_repack: true`，给出按实际实体填写的 `exclude.entity_globs` 示例。Bridge 内使用 MQTT，其他依赖组播发现的集成单独验收。 |
 | Mosquitto | `eclipse-mosquitto`，128 MiB | 用户名、密码和 ACL 由首次部署生成，持久化配置和数据。默认只在应用 bridge 内向 HA 和 Z2M 提供 MQTT，不启用 WebSocket。 |
 | Zigbee2MQTT | `ghcr.io/koenkk/zigbee2mqtt`，256 MiB | 应用目录 `zigbee2mqtt/data`。用稳定设备节点映射独占协调器，设备协议按实际芯片配置，开启 HA 的 MQTT discovery。 |
-| 1Panel | `moelin/1panel` 是待验证候选，256 MiB | 核对来源、ARM64 镜像、持久化目录和兼容性才纳入发行。仅发布局域网管理端口，不启用 `privileged`。如需完整 Docker 管理，授权宿主 socket 等同于授予宿主管理能力，需在部署时显式启用。核心栈仍由独立 Compose 项目编排。 |
+| 1Panel（可选） | 用户自行安装，容器部署建议 256 MiB | 部署前核对 ARM64 兼容性和持久化目录。容器部署仅开放局域网管理端口，关闭 `privileged`。如需 Docker 管理，授权宿主 socket 等同于授予宿主管理能力，需在部署时显式启用。核心栈仍由独立 Compose 项目编排。 |
 
 单个协调器由 Z2M 使用。HA 的直通需求若改为启用 ZHA，则需第二个独立协调器。默认配置不启用非必要的高频轮询。局域网访问通过 Avahi 的 `houzzkit.local` 配合应用实际端口，按需增加 `_http._tcp` 服务公告。 [Zigbee2MQTT 协调器限制](https://www.zigbee2mqtt.io/guide/faq/) · [HA Recorder](https://www.home-assistant.io/integrations/recorder/) · [Docker 安全模型](https://docs.docker.com/engine/security/)
 
@@ -110,7 +110,7 @@ Armbian 使用独立 Linux 工作流并固定构建输入。推送到 `main` 后
 | 3 | 迁移 Docker 和应用数据 | `docker info` 的 Docker Root Dir、containerd 数据、卷、应用数据库与容器日志均位于 SSD |
 | 4 | 关机取下已配置的 SSD，再启动 | 主系统和 SSH 正常，Docker 与核心栈暂停，未在 eMMC 上生成误用的数据目录 |
 | 5 | 恢复 SSD 并重启容器服务 | 使用原 UUID，恢复 HA 历史、Zigbee 配对和 MQTT 数据 |
-| 6 | 运行至少 30 分钟，同时进行 Zigbee、MQTT、HA 历史写入和面板状态查询 | `docker stats` 与容器配置的内存上限一致，无宿主或容器 OOM，SSH 保持可用 |
+| 6 | 运行至少 30 分钟，同时进行 Zigbee、MQTT 和 HA 历史写入。自行安装了 1Panel 时，再检查面板状态 | `docker stats` 与容器配置的内存上限一致，无宿主或容器 OOM，SSH 保持可用 |
 | 7 | 验证升级和恢复 | eMMC 更新后可启动，SSD 应用数据完整，Rockchip 恢复入口可用 |
 
-验收归档最少包含镜像及校验值、源提交、F1 板卡版本、测试 NVMe 型号与链路、Zigbee 协调器型号、四个镜像摘要，以及启动和故障测试记录。
+验收归档最少包含固件及校验值、源提交、F1 板卡版本、测试 NVMe 型号与链路、Zigbee 协调器型号、实际部署的容器镜像摘要，以及启动和故障测试记录。

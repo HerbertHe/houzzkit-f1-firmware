@@ -15,8 +15,15 @@ async function hardwareFetch(path, options) {
     window.location.replace("/login");
     throw new Error("请重新登录。");
   }
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "设备信息暂时不可用。");
+  const data = await response.json().catch((error) => {
+    if (response.ok) throw error;
+    return {};
+  });
+  if (!response.ok) {
+    const error = new Error(data?.error || "设备信息暂时不可用。");
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -102,7 +109,9 @@ if (hardwareRoute === "/") {
 if (hardwareRoute === "/hardware/boot-checks") {
   const select = byID("boot-report");
   const status = byID("report-status");
+  const actions = byID("report-actions");
   let reports = [];
+  let retries = 0;
 
   function display() {
     const report = reports.find((item) => item.bootId === select.value);
@@ -119,8 +128,10 @@ if (hardwareRoute === "/hardware/boot-checks") {
   }
 
   async function loadReports() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
     try {
-      const reply = await hardwareFetch("/api/v1/hardware/boot-reports");
+      const reply = await hardwareFetch("/api/v1/hardware/boot-reports", {signal: controller.signal});
       const previous = select.selectedIndex > 0 ? select.value : "";
       reports = reply.reports || [];
       select.replaceChildren();
@@ -133,12 +144,28 @@ if (hardwareRoute === "/hardware/boot-checks") {
         reports.length ? "保留最近三次开机检查记录。" : "暂无完整的启动检查记录。");
       byID("report-history").hidden = reports.length === 0;
       display();
+      retries = 0;
       if (reply.checking) setTimeout(loadReports, 2000);
     } catch (error) {
-      status.textContent = error.message;
+      const timedOut = error.name === "AbortError";
+      status.textContent = timedOut ? "读取启动检查超时。" : error.message;
+      if ((timedOut || error.status === 503 || error instanceof TypeError) && retries < 5) {
+        retries += 1;
+        setTimeout(loadReports, 2000);
+      } else {
+        actions.hidden = false;
+      }
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   select.addEventListener("change", display);
+  byID("report-refresh").addEventListener("click", () => {
+    actions.hidden = true;
+    retries = 0;
+    status.textContent = "正在读取报告…";
+    loadReports();
+  });
   loadReports();
 }

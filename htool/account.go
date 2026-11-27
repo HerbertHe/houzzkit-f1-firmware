@@ -330,6 +330,10 @@ func decodeLimitedJSON(reader io.Reader, target any, limit int64) error {
 	if err != nil || int64(len(data)) > limit {
 		return errors.New("invalid request size")
 	}
+	return decodeStrictJSON(data, target)
+}
+
+func decodeStrictJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

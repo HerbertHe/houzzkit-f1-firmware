@@ -81,10 +81,8 @@ jobs:
               [.distribution_version, .kernel_release, .partition_layout_id] | @tsv
             ' houzzkit-firmware.json)
           IFS=$'\t' read -r distro kernel_release layout <<< "$metadata"
-          release_options=(--latest)
           draft_options=()
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            release_options=(--latest=false)
             draft_options=(--prerelease)
           fi
 
@@ -123,4 +121,48 @@ jobs:
           fi
           mv houzzkit-firmware.json "$tag.json"
           gh release upload "$tag" "${assets[@]}" "$tag.sha256" "$tag.json"
-          gh release edit "$tag" --draft=false --verify-tag --notes-file "$notes" "${release_options[@]}"
+          gh release edit "$tag" --draft=false --verify-tag --notes-file "$notes" --latest=false
+
+  update-latest:
+    needs: release
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    # The repository badge is informational. The firmware is already public.
+    continue-on-error: true
+    permissions:
+      contents: write
+    concurrency:
+      group: houzzkit-firmware-repository-latest
+      queue: max
+    steps:
+      - name: Mark the newest official firmware release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Re-read published releases inside the shared queue. A build that
+          # finishes late cannot promote an older version over a newer one.
+          find_latest() {
+            timeout 40s gh api --paginate "repos/$GH_REPO/releases?per_page=100" |
+              jq -ser '
+              [ .[][] |
+                select(.draft == false and .prerelease == false and .published_at != null) |
+                .tag_name as $tag |
+                ($tag | capture("^houzzkit-firmware-(?<flavor>ubuntu|armbian)-(?<day>[0-9]{4}_[0-9]{2}_[0-9]{2})(?:_(?<seq>[1-9][0-9]*))?$")) |
+                {tag: $tag, day, seq: ((.seq // "0") | tonumber), prefer_armbian: (.flavor == "armbian")}
+              ] |
+              max_by([.day, .seq, .prefer_armbian]) | .tag // empty
+              '
+          }
+          for attempt in 1 2 3; do
+            if latest=$(find_latest) && timeout 40s gh release edit "$latest" --latest; then
+              exit 0
+            fi
+            printf 'Latest update attempt %s of 3 failed.\n' "$attempt" >&2
+            if [[ "$attempt" != 3 ]]; then
+              sleep "$((attempt * 3))"
+            fi
+          done
+          echo "::warning::The firmware release is available. The GitHub Latest badge could not be refreshed."
+          exit 1

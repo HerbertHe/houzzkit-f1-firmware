@@ -70,18 +70,21 @@ func (m *hardwareManager) binding() (bindingRecord, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return bindingRecord{Revision: initialBindingRevision}, nil
 	}
-	if err == nil {
-		if !bindingRevisionPattern.MatchString(record.Revision) || (record.Device != nil && !validBinding(*record.Device)) {
-			return bindingRecord{}, errors.New("invalid binding record")
+	if err != nil {
+		// Older firmware stored a bare device identity.
+		var legacy deviceIdentity
+		if readHardwareState(path, &legacy) != nil || !validBinding(legacy) {
+			return bindingRecord{}, err
 		}
-		return record, nil
+		record = bindingRecord{Revision: serialCandidateID("", "", "", legacy), Device: &legacy}
 	}
-	// Older firmware stored a bare device identity.
-	var legacy deviceIdentity
-	if readHardwareState(path, &legacy) == nil && validBinding(legacy) {
-		return bindingRecord{Revision: serialCandidateID("", "", "", legacy), Device: &legacy}, nil
+	if !bindingRevisionPattern.MatchString(record.Revision) || (record.Device != nil && !validBinding(*record.Device)) {
+		return bindingRecord{}, errors.New("invalid binding record")
 	}
-	return bindingRecord{}, err
+	if record.Device != nil && record.Device.Kind == "usb" && record.Device.Serial != "" {
+		record.Device.Topology = ""
+	}
+	return record, nil
 }
 
 func validBinding(identity deviceIdentity) bool {
@@ -318,6 +321,39 @@ func removeStateFile(path string) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
+// Allow udev to publish the stable path of an already bound coordinator.
+const coordinatorStartupWait = 10 * time.Second
+
+func (m *hardwareManager) initializeMapping() string {
+	deadline := time.Now().Add(coordinatorStartupWait)
+	for {
+		reply := m.mapping(hardwareRequest{Operation: "mapping"})
+		if reply.Mapping == nil {
+			return reply.Error
+		}
+		state := reply.Mapping.State
+		remaining := time.Until(deadline)
+		if (state != "missing" && state != "waiting") || remaining <= 0 {
+			return state
+		}
+		time.Sleep(min(time.Second, remaining))
+	}
+}
+
+func notifyHardwareReady() error {
+	socket := os.Getenv("NOTIFY_SOCKET")
+	if socket == "" {
+		return errors.New("missing systemd notification socket")
+	}
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Write([]byte("READY=1"))
+	return err
+}
+
 func runHardware(listener net.Listener) error {
 	uid, err := webUID()
 	if err != nil {
@@ -325,8 +361,21 @@ func runHardware(listener net.Listener) error {
 	}
 	m := &hardwareManager{stateDir: hardwareStateDir, configDir: "/etc/htoold", recording: true, alias: coordinatorAlias,
 		ownedLink: filepath.Join(hardwareRuntimeDir, "coordinator"), inventory: serialInventory}
-	go m.observe()
+	ready := make(chan struct{})
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- m.serveHardware(listener, uid, ready) }()
 	go m.recordBoot()
+	startupState := m.initializeMapping()
+	fmt.Fprintf(os.Stderr, "initial zigbee coordinator: %s\n", startupState)
+	if err := notifyHardwareReady(); err != nil {
+		return fmt.Errorf("notify systemd of hardware startup: %w", err)
+	}
+	close(ready)
+	go m.observe(startupState)
+	return <-serverErr
+}
+
+func (m *hardwareManager) serveHardware(listener net.Listener, uid uint32, ready <-chan struct{}) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -344,8 +393,15 @@ func runHardware(listener net.Listener) error {
 			}
 			var reply hardwareReply
 			switch request.Operation {
-			case "mapping", "bind", "unbind":
+			case "mapping":
 				reply = m.mapping(request)
+			case "bind", "unbind":
+				select {
+				case <-ready:
+					reply = m.mapping(request)
+				default:
+					reply = hardwareError(503, "正在恢复开机设备映射，请稍后重试。")
+				}
 			case "reports":
 				reply = m.reports()
 			default:
@@ -356,11 +412,10 @@ func runHardware(listener net.Listener) error {
 	}
 }
 
-func (m *hardwareManager) observe() {
+func (m *hardwareManager) observe(last string) {
 	timer := time.NewTicker(3 * time.Second)
 	defer timer.Stop()
 	events := hardwareEvents()
-	last := ""
 	for {
 		reply := m.mapping(hardwareRequest{Operation: "mapping"})
 		state := reply.Error

@@ -6,6 +6,7 @@ After=systemd-sysusers.service
 Service=htoold.service
 ListenStream=[::]:443
 BindIPv6Only=both
+BindToDevice=eno1
 
 [Install]
 WantedBy=sockets.target
